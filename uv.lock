@@ -305,12 +305,14 @@ version = "0.1.0"
 source = { virtual = "." }
 dependencies = [
     { name = "matplotlib" },
+    { name = "pyhere" },
     { name = "wfdb" },
 ]
 
 [package.metadata]
 requires-dist = [
     { name = "matplotlib", specifier = ">=3.11.1" },
+    { name = "pyhere", specifier = ">=1.0.3" },
     { name = "wfdb", specifier = ">=4.3.1" },
 ]
 
@@ -755,6 +757,15 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/1b/7d/92392ff7815c21062bea51aa7b87d45576f649f16458d78b7cf94b9ab2e6/pycparser-3.0.tar.gz", hash = "sha256:600f49d217304a5902ac3c37e1281c9fe94e4d0489de643a9504c5cdfdfc6b29", size = 103492, upload-time = "2026-01-21T14:26:51.89Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/0c/c3/44f3fbbfa403ea2a7c779186dc20772604442dde72947e7d01069cbe98e3/pycparser-3.0-py3-none-any.whl", hash = "sha256:b727414169a36b7d524c1c3e31839a521725078d7b2ff038656844266160a992", size = 48172, upload-time = "2026-01-21T14:26:50.693Z" },
+]
+
+[[package]]
+name = "pyhere"
+version = "1.0.3"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/34/e2/79dca2aa113e3be3bac013ec3c6d21fde79783f62866312012d787026e0c/pyhere-1.0.3.tar.gz", hash = "sha256:dbea60e83cbcaef41c4da429c1372b7780c580bc0714801c6c5957df06208cdf", size = 4329, upload-time = "2024-07-26T18:59:55.937Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/04/e6/80f613b0f6d5079950083f274f2f19a2bf2870c0376ccd4a63851ef53f43/pyhere-1.0.3-py3-none-any.whl", hash = "sha256:7c39f5ab806d332ce9812b74e4486c0753e2c5416265758c7251f1bbe0946f69", size = 4395, upload-time = "2024-07-26T18:59:54.56Z" },
 ]
 
 [[package]]
