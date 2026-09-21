@@ -1,0 +1,88 @@
+# Preprocessing Configuration for ECG Heartbeat Classification on Edge-AI
+# Target Device: Analog Devices MAX78002
+
+dataset:
+  name: "MIT-BIH Arrhythmia Database"
+  raw_dir: "dataset/physionet.org/files/mitdb/1.0.0"
+  processed_dir: "dataset/processed"
+  results_dir: "results"
+  sampling_rate: 360  # Hz
+
+signal_processing:
+  lead: "MLII"
+  bandpass:
+    enabled: true
+    lowcut: 0.5   # Hz (removes baseline wander)
+    highcut: 40.0  # Hz (removes EMG and powerline noise)
+    order: 3
+  segmentation:
+    window_size: 256  # 2^8 samples (711.1 ms @ 360 Hz)
+    pre_r: 90         # 250.0 ms before R-peak (P-wave and PR interval)
+    post_r: 166       # 461.1 ms after R-peak (QRS, ST segment, T-wave)
+  normalization:
+    method: "z-score"  # per-heartbeat standardization: (x - mean) / std
+    clip_min: -3.0     # standard deviations
+    clip_max: 3.0      # standard deviations
+
+partitioning:
+  # Inter-patient protocol (AAMI EC57 / de Chazal et al., 2004)
+  ds1_train_records:
+    - "109"
+    - "112"
+    - "114"
+    - "115"
+    - "116"
+    - "119"
+    - "122"
+    - "124"
+    - "201"
+    - "203"
+    - "207"
+    - "208"
+    - "209"
+    - "215"
+    - "220"
+    - "223"
+    - "230"
+  ds1_val_records:
+    - "101"
+    - "106"
+    - "108"
+    - "118"
+    - "205"
+  ds2_test_records:
+    - "100"
+    - "103"
+    - "105"
+    - "111"
+    - "113"
+    - "117"
+    - "121"
+    - "123"
+    - "200"
+    - "202"
+    - "210"
+    - "212"
+    - "213"
+    - "214"
+    - "219"
+    - "221"
+    - "222"
+    - "228"
+    - "231"
+    - "232"
+    - "233"
+    - "234"
+  paced_excluded_records:
+    - "102"
+    - "104"
+    - "107"
+    - "217"
+
+augmentation:
+  # Applied strictly during model training on train split
+  jitter_max: 5          # samples (+/- 14 ms)
+  scale_min: 0.85        # amplitude scale factor
+  scale_max: 1.15        # amplitude scale factor
+  noise_std: 0.02        # additive Gaussian noise
+  baseline_drift: true   # synthetic wander simulation

@@ -6,6 +6,10 @@ readme = "README.md"
 requires-python = ">=3.14"
 dependencies = [
     "matplotlib>=3.11.1",
+    "nbconvert>=7.17.1",
     "pyhere>=1.0.3",
+    "pyyaml>=6.0.3",
+    "seaborn>=0.13.2",
+    "tqdm>=4.70.1",
     "wfdb>=4.3.1",
 ]
