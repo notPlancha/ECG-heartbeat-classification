@@ -36,8 +36,10 @@ ECG-heartbeat-classification/
 │       └── test.npz               # Held-out test set: 49,685 beats (22 DS2 records)
 │
 ├── notebooks/
-│   ├── EDA.ipynb                  # Fully executed, comprehensive Data Understanding (CRISP-DM Stage 2)
-│   └── play-around.ipynb          # Scratch notebook for quick tests
+│   ├── Task1_Business_Understanding.ipynb  # CRISP-DM Stage 1: Business / Application Understanding
+│   ├── EDA.ipynb                           # CRISP-DM Stage 2: Data Understanding & Exploratory Analysis
+│   ├── Task3_Data_Preparation.ipynb        # CRISP-DM Stage 3: Data Preparation & Preprocessing
+│   └── play-around.ipynb                   # Scratch notebook for quick tests
 │
 ├── src/
 │   ├── data_understanding.py      # Core modular utilities for record loading, filtering, and AAMI mapping
@@ -80,10 +82,15 @@ just prepare-data
 uv run python src/prepare_data.py
 ```
 
-### 3. Run or Launch the Exploratory Data Analysis (EDA) Notebook
+### 3. Run the CRISP-DM Submission 1 Notebooks
 ```powershell
-# Re-execute the EDA notebook in place:
-just run-eda
+# Re-execute all three notebooks in place:
+just run-all-notebooks
+
+# Or execute individual notebooks:
+just run-task1   # Task 1: Business / Application Understanding
+just run-task2   # Task 2: Data Understanding (EDA)
+just run-task3   # Task 3: Data Preparation
 
 # Or launch Jupyter Lab / Notebook interactively:
 just lab

@@ -57,15 +57,36 @@ PACED_RECORDS = ["102", "104", "107", "217"]
 # All 48 records in the MIT-BIH Arrhythmia Database
 ALL_RECORDS = sorted(DS1_RECORDS + DS2_TEST_RECORDS + PACED_RECORDS)
 
-# Default path to dataset in the workspace
+# Default relative path to dataset in the workspace
 DEFAULT_DATA_DIR = os.path.join(
-    os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
     "dataset",
     "physionet.org",
     "files",
     "mitdb",
     "1.0.0",
 )
+
+
+def resolve_data_dir(data_dir: str = DEFAULT_DATA_DIR) -> str:
+    """
+    Resolve data directory path using a relative path where possible.
+    Works whether invoked from the project root or subdirectories (e.g. notebooks/).
+    """
+    if os.path.exists(data_dir):
+        return data_dir
+    # Check relative path from a subdirectory like notebooks/
+    rel_parent = os.path.join("..", data_dir)
+    if os.path.exists(rel_parent):
+        return rel_parent
+    # Fallback to module directory relative path
+    module_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    abs_candidate = os.path.join(module_dir, data_dir)
+    if os.path.exists(abs_candidate):
+        try:
+            return os.path.relpath(abs_candidate)
+        except ValueError:
+            return abs_candidate
+    return data_dir
 
 
 # ==============================================================================
@@ -162,6 +183,7 @@ def load_record(
     RecordData
         Structured dataclass containing signal, annotations, and metadata.
     """
+    data_dir = resolve_data_dir(data_dir)
     record_path = os.path.join(data_dir, str(record_name))
     
     # Read record signal and header
