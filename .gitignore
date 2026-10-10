@@ -4,6 +4,7 @@ dataset/*
 __pycache__/
 *.py[codz]
 *$py.class
+.venv/
 
 # C extensions
 *.so
