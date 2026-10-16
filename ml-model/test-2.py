@@ -3,8 +3,9 @@ python
 import numpy as np
 import torch
 import torch.nn as nn
-from sklearn.model_selection import train_test_split
-
+from sklearn.model_selection import train_test_split    
+from pathlib import Path
+import wfdb
 # =====================================================
 # 1. CONFIGURATION
 # =====================================================
@@ -31,7 +32,7 @@ device = torch.device(
 
 
 # Path to your MIT-BIH database folder
-DATA_DIR = path("../dataset/mit-bih-arrhythmia-database-1.0.0")
+DATA_DIR = Path("../dataset/mit-bih-arrhythmia-database-1.0.0")
 
 # Four-class mapping
 label_map = {
@@ -117,24 +118,18 @@ print("y shape:", y.shape)
 print("Total beats:", len(y))
 print("Class counts:", np.bincount(y, minlength=4))
 
-
 if len(X) != len(y):
     raise ValueError("X and y must contain the same number of beats.")
 
 # Keep only labels included in our four-class mapping.
-keep = np.isin(y, list(label_map.keys()))
+keep = np.isin(y, [0, 1, 2, 3])
 
 X = X[keep]
-y = y[keep]
-
-# Convert string labels to integer class IDs.
-y_encoded = np.array(
-    [label_map[label] for label in y],
-    dtype=np.int64
-)
+y_encoded = y[keep].astype(np.int64)
 
 print("Total retained beats:", len(y_encoded))
 print("Classes: N=0, S=1, V=2, F=3")
+print("Encoded class counts:", np.bincount(y_encoded, minlength=4))
 
 # =====================================================
 # 3. SPLIT INTO TRAINING AND TEST SETS
