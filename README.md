@@ -161,6 +161,6 @@ The module `src/dataset.py` provides an `ECGDataset` class compatible with pure 
 from dataset import ECGDataset
 
 # Load training data with augmentation enabled
-train_ds = ECGDataset.from_npz('dataset/processed/train.npz', augment=True)
+train_ds = ECGDataset.from_npz("dataset/processed/train.npz", augment=True)
 print(f"Loaded {len(train_ds)} beats with class counts: {train_ds.get_class_counts()}")
 ```

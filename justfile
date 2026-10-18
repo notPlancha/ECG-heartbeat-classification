@@ -37,3 +37,9 @@ run-task3:
 
 # Execute all CRISP-DM Submission 1 notebooks in sequence
 run-all-notebooks: run-task1 run-task2 run-task3
+
+lint:
+  uv run ruff check --fix
+
+format:
+  uv run ruff format
