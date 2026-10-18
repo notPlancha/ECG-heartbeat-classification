@@ -1,7 +1,12 @@
-# Justfile for ECG Heartbeat Classification on Edge-AI
+download-dataset-curl:
+    curl.exe -L -o dataset/mitdb.zip https://physionet.org/static/published-projects/mitdb/mit-bih-arrhythmia-database-1.0.0.zip
+    tar -xf dataset/mitdb.zip -C dataset
 
-# Install dependencies using uv
-install:
+download-dataset-wget:
+    wget -r -N -c -np https://physionet.org/files/mitdb/1.0.0/ -P dataset 
+
+    
+install-packages:
     uv sync
 
 # Compile locked requirements.txt
