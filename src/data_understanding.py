@@ -18,13 +18,11 @@ Course: ECG Heartbeat Classification on Edge-AI
 import os
 from collections import Counter
 from dataclasses import dataclass
-from typing import Dict, List, Optional, Tuple, Union
 
 import numpy as np
 import pandas as pd
-from scipy.signal import butter, filtfilt
 import wfdb
-
+from scipy.signal import butter, filtfilt
 
 # ==============================================================================
 # Standard Dataset Partitioning Constants (AAMI / de Chazal et al., 2004)
@@ -101,7 +99,7 @@ def resolve_data_dir(data_dir: str = DEFAULT_DATA_DIR) -> str:
 # Class F: Fusion beats
 # Non-beat markers and unclassifiable beats are excluded and logged.
 
-AAMI_MAPPING: Dict[str, Tuple[str, str]] = {
+AAMI_MAPPING: dict[str, tuple[str, str]] = {
     # Class N: Normal / Bundle Branch Block Beats
     "N": ("N", "Normal beat"),
     "L": ("N", "Left bundle branch block beat"),
@@ -124,7 +122,7 @@ AAMI_MAPPING: Dict[str, Tuple[str, str]] = {
 }
 
 # Excluded symbols: rare paced, unclassifiable beats, and rhythm/signal annotations
-EXCLUDED_ANNOTATIONS: Dict[str, str] = {
+EXCLUDED_ANNOTATIONS: dict[str, str] = {
     "/": "Paced beat (excluded: artificial pacemaker morphology)",
     "f": "Fusion of paced and normal beat (excluded: pacemaker artifact)",
     "Q": "Unclassifiable beat (excluded: unknown morphology)",
@@ -153,11 +151,11 @@ class RecordData:
     record_name: str
     signal: np.ndarray             # shape: (samples, channels), in mV
     fs: int                        # sampling frequency (360 Hz)
-    sig_names: List[str]          # lead names, e.g. ['MLII', 'V1']
-    units: List[str]              # e.g. ['mV', 'mV']
-    comments: List[str]           # clinical patient info, medications
+    sig_names: list[str]          # lead names, e.g. ['MLII', 'V1']
+    units: list[str]              # e.g. ['mV', 'mV']
+    comments: list[str]           # clinical patient info, medications
     ann_indices: np.ndarray       # sample index of each annotation
-    ann_symbols: List[str]        # original MIT-BIH annotation symbols
+    ann_symbols: list[str]        # original MIT-BIH annotation symbols
 
 
 # ==============================================================================
@@ -206,7 +204,7 @@ def load_record(
 def extract_lead_signal(
     record_data: RecordData,
     preferred_lead: str = "MLII",
-) -> Tuple[np.ndarray, str, int]:
+) -> tuple[np.ndarray, str, int]:
     """
     Extract a single lead signal from the record.
 
@@ -302,13 +300,13 @@ def butter_bandpass_filter(
 def segment_heartbeats(
     signal: np.ndarray,
     ann_indices: np.ndarray,
-    ann_symbols: List[str],
+    ann_symbols: list[str],
     record_name: str,
     pre_r: int = 90,
     post_r: int = 166,
     normalize: bool = True,
-    clip_range: Optional[Tuple[float, float]] = (-3.0, 3.0),
-) -> Tuple[np.ndarray, np.ndarray, List[str], np.ndarray, Counter]:
+    clip_range: tuple[float, float] | None = (-3.0, 3.0),
+) -> tuple[np.ndarray, np.ndarray, list[str], np.ndarray, Counter]:
     """
     Extract fixed-size heartbeat windows centered around annotated R-peaks.
 
@@ -413,7 +411,7 @@ def segment_heartbeats(
 
 def get_dataset_metadata_table(
     data_dir: str = DEFAULT_DATA_DIR,
-    records: Optional[List[str]] = None,
+    records: list[str] | None = None,
 ) -> pd.DataFrame:
     """
     Compile a complete metadata summary table across all records in the database.
@@ -481,7 +479,7 @@ def get_dataset_metadata_table(
 
 def get_class_breakdown_table(
     data_dir: str = DEFAULT_DATA_DIR,
-    records: Optional[List[str]] = None,
+    records: list[str] | None = None,
 ) -> pd.DataFrame:
     """
     Calculate the exact counts of each target class (N, S, V, F) and excluded
@@ -568,7 +566,7 @@ def get_target_classes_table() -> pd.DataFrame:
 def assess_signal_quality(
     signal: np.ndarray,
     fs: float = 360.0,
-) -> Dict[str, Union[float, int, bool]]:
+) -> dict[str, float | int | bool]:
     """
     Investigate data quality indicators for an ECG signal.
 

@@ -16,16 +16,15 @@ Features:
 Author: Course Instructor Solution
 Course: ECG Heartbeat Classification on Edge-AI
 """
-import os
 from collections import Counter
-from typing import Callable, Dict, List, Optional, Tuple, Union
+from collections.abc import Callable
 
 import numpy as np
 
 # Try importing torch; if not present, graceful fallback to pure NumPy
 try:
     import torch
-    from torch.utils.data import Dataset, DataLoader, WeightedRandomSampler
+    from torch.utils.data import DataLoader, Dataset, WeightedRandomSampler
     HAS_TORCH = True
 except ImportError:
     HAS_TORCH = False
@@ -72,14 +71,14 @@ class ECGDataset(Dataset):
         self,
         X: np.ndarray,
         y: np.ndarray,
-        record_ids: Optional[np.ndarray] = None,
-        r_peaks: Optional[np.ndarray] = None,
-        symbols: Optional[np.ndarray] = None,
+        record_ids: np.ndarray | None = None,
+        r_peaks: np.ndarray | None = None,
+        symbols: np.ndarray | None = None,
         augment: bool = False,
         jitter_max: int = 5,
-        scale_range: Tuple[float, float] = (0.85, 1.15),
+        scale_range: tuple[float, float] = (0.85, 1.15),
         noise_std: float = 0.02,
-        transform: Optional[Callable[[np.ndarray], np.ndarray]] = None,
+        transform: Callable[[np.ndarray], np.ndarray] | None = None,
         to_torch: bool = True,
     ) -> None:
         if X.ndim == 2:
@@ -145,7 +144,7 @@ class ECGDataset(Dataset):
 
         return augmented.astype(np.float32)
 
-    def __getitem__(self, idx: int) -> Tuple[Union[np.ndarray, "torch.Tensor"], Union[int, "torch.Tensor"]]:
+    def __getitem__(self, idx: int) -> tuple[np.ndarray | torch.Tensor, int | torch.Tensor]:
         beat = self.X[idx]  # shape: (1, L)
         label = self.y[idx]
 
@@ -165,7 +164,7 @@ class ECGDataset(Dataset):
         npz_path: str,
         augment: bool = False,
         to_torch: bool = True,
-    ) -> "ECGDataset":
+    ) -> ECGDataset:
         """Load an ECGDataset directly from a saved .npz file."""
         data = np.load(npz_path, allow_pickle=True)
         return cls(
@@ -178,7 +177,7 @@ class ECGDataset(Dataset):
             to_torch=to_torch,
         )
 
-    def get_class_counts(self) -> Dict[str, int]:
+    def get_class_counts(self) -> dict[str, int]:
         """Return counts of each class in the dataset."""
         cnts = Counter(self.y)
         return {CLASS_NAMES[i]: cnts.get(i, 0) for i in range(4)}
@@ -226,7 +225,7 @@ def get_data_loader(
     shuffle: bool = True,
     balanced_sampling: bool = False,
     num_workers: int = 0,
-) -> Union["DataLoader", None]:
+) -> DataLoader | None:
     """
     Create a PyTorch DataLoader with optional class-balanced sampling.
     """

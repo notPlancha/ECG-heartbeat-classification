@@ -20,7 +20,6 @@ import json
 import os
 import sys
 from collections import Counter
-from typing import Dict, List, Tuple
 
 import numpy as np
 import pandas as pd
@@ -32,7 +31,7 @@ import data_understanding as du
 
 
 def process_record_list(
-    records: List[str],
+    records: list[str],
     data_dir: str,
     pre_r: int = 90,
     post_r: int = 166,
@@ -41,9 +40,9 @@ def process_record_list(
     fs: float = 360.0,
     filter_order: int = 3,
     normalize: bool = True,
-    clip_range: Tuple[float, float] = (-3.0, 3.0),
+    clip_range: tuple[float, float] = (-3.0, 3.0),
     preferred_lead: str = "MLII",
-) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, List[str], Counter, List[dict]]:
+) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, list[str], Counter, list[dict]]:
     """
     Process a list of records: filter, segment beats, normalize, and collect arrays.
     """
@@ -137,7 +136,7 @@ def run_pipeline(
     filter_order: int = 3,
     clip_min: float = -3.0,
     clip_max: float = 3.0,
-) -> Dict[str, dict]:
+) -> dict[str, dict]:
     """
     Run the end-to-end dataset preparation pipeline.
     """
@@ -200,7 +199,7 @@ def run_pipeline(
         cnts = Counter(y)
         split_results[split_name] = {
             "records": rec_list,
-            "total_samples": int(len(y)),
+            "total_samples": len(y),
             "N": int(cnts.get(0, 0)),
             "S": int(cnts.get(1, 0)),
             "V": int(cnts.get(2, 0)),
