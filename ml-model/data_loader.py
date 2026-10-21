@@ -48,14 +48,13 @@ TESTING_DATA = [
     "231", "232", "233", "234",
 ]
 
-
 # Load all heartbeats from the training records
-def _load_records():
+def _load_records(record_ids):
     all_beats = []
     all_annotations = []
 
-    for record_id in TRAINING_DATA:
-        X, y = load_record(record_id)
+    for record_id in record_ids:
+        X, y = _load_record(record_id)
 
         all_beats.extend(X)
         all_annotations.extend(y)
@@ -124,6 +123,5 @@ def load_training_data():
 def load_testing_data():
     return _load_records(TESTING_DATA)
 
-
 if __name__ == "__main__":
-    X_train, y_train = _load_records()
+    X_train, y_train = load_training_data()
