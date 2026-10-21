@@ -1,0 +1,78 @@
+# yaml-language-server: $schema=https://taskfile.dev/schema.json
+
+version: '3'
+
+tasks:
+  default:
+    desc: List available tasks
+    cmds:
+      - task --list
+    silent: true
+
+  download-dataset:
+    desc: Download MIT-BIH Arrhythmia Database using wget
+    aliases: [download-dataset-wget]
+    cmds:
+      - wget -r -N -c -np https://physionet.org/files/mitdb/1.0.0/ -P dataset
+
+  download-dataset-curl:
+    desc: Download and extract MIT-BIH Arrhythmia Database using curl and tar
+    cmds:
+      - curl.exe -L -o dataset/mitdb.zip https://physionet.org/static/published-projects/mitdb/mit-bih-arrhythmia-database-1.0.0.zip
+      - tar -xf dataset/mitdb.zip -C dataset
+
+  install-packages:
+    desc: Install project dependencies with uv
+    cmds:
+      - uv sync
+
+  to-requirements-txt:
+    desc: Compile locked requirements.txt
+    cmds:
+      - uv pip compile pyproject.toml -o requirements.txt
+
+  prepare-data:
+    desc: Run the complete data preparation pipeline (filtering, segmentation, normalization, export)
+    cmds:
+      - uv run python src/prepare_data.py
+
+  run-notebook:
+    desc: 'Execute a notebook in-place (usage: task run-notebook -- <file.ipynb>)'
+    cmds:
+      - uv run jupyter nbconvert --to notebook --execute --inplace "notebooks/{{.NOTEBOOK | default .CLI_ARGS}}"
+
+  run-task1:
+    desc: 'Execute CRISP-DM Stage 1: Business / Application Understanding notebook'
+    cmds:
+      - task: run-notebook
+        vars: { NOTEBOOK: Task1_Business_Understanding.ipynb }
+
+  run-task2:
+    desc: 'Execute CRISP-DM Stage 2: Data Understanding (EDA) notebook'
+    aliases: [run-eda]
+    cmds:
+      - task: run-notebook
+        vars: { NOTEBOOK: EDA.ipynb }
+
+  run-task3:
+    desc: 'Execute CRISP-DM Stage 3: Data Preparation notebook'
+    cmds:
+      - task: run-notebook
+        vars: { NOTEBOOK: Task3_Data_Preparation.ipynb }
+
+  run-all-notebooks:
+    desc: Execute all CRISP-DM Submission 1 notebooks in sequence
+    cmds:
+      - task: run-task1
+      - task: run-task2
+      - task: run-task3
+
+  lint:
+    desc: Lint code with ruff
+    cmds:
+      - uv run ruff check --fix
+
+  format:
+    desc: Format code with ruff
+    cmds:
+      - uv run ruff format
