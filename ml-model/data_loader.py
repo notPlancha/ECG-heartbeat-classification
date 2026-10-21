@@ -50,7 +50,7 @@ TESTING_DATA = [
 
 
 # Load all heartbeats from the training records
-def load_records():
+def _load_records():
     all_beats = []
     all_annotations = []
 
@@ -75,7 +75,7 @@ def load_records():
     return X, y
 
 # Load one record and extract its annotated heartbeats
-def load_record(record_id):
+def _load_record(record_id):
     BEFORE = 90
     AFTER = 166
     WINDOW_SIZE = BEFORE + AFTER
@@ -117,6 +117,13 @@ def load_record(record_id):
     # Return after processing ALL annotations in this record
     return extracted_beats, extracted_annotations
 
+# public functions
+def load_training_data():
+    return _load_records(TRAINING_DATA)
+
+def load_testing_data():
+    return _load_records(TESTING_DATA)
+
 
 if __name__ == "__main__":
-    X_train, y_train = load_records()
+    X_train, y_train = _load_records()
