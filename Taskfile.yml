@@ -13,7 +13,7 @@ tasks:
     desc: Download MIT-BIH Arrhythmia Database using wget
     aliases: [download-dataset-wget]
     cmds:
-      - wget -r -N -c -np https://physionet.org/files/mitdb/1.0.0/ -P dataset
+      - wget -r -N -c -np -nd -P dataset/mit-bih-arrhythmia-database-1.0.0 -e robots=off https://physionet.org/files/mitdb/1.0.0/
 
   download-dataset-curl:
     desc: Download and extract MIT-BIH Arrhythmia Database using curl and tar

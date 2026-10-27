@@ -33,10 +33,20 @@ except ImportError:
   Dataset = object  # type: ignore
 
 
-# Class name definitions
-CLASS_NAMES = ["N", "S", "V", "F"]
-CLASS_TO_IDX = {cls: idx for idx, cls in enumerate(CLASS_NAMES)}
-IDX_TO_CLASS = {idx: cls for idx, cls in enumerate(CLASS_NAMES)}
+# Class name definitions imported from centralized constants
+try:
+  from src.constants import CLASS_NAMES, CLASS_TO_IDX, IDX_TO_CLASS, NUM_CLASSES
+except ImportError:
+  from constants import CLASS_NAMES, CLASS_TO_IDX, IDX_TO_CLASS, NUM_CLASSES
+
+__all__ = [
+  "CLASS_NAMES",
+  "CLASS_TO_IDX",
+  "IDX_TO_CLASS",
+  "NUM_CLASSES",
+  "ECGDataset",
+  "get_data_loader",
+]
 
 
 class ECGDataset(Dataset):

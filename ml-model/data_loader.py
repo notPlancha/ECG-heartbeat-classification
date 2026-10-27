@@ -1,52 +1,27 @@
+import sys
 from pathlib import Path
 
 import numpy as np
 import wfdb
 
-# Set root path
+# Add project root to sys.path if not present
 ROOT = Path(__file__).resolve().parents[1]
-DATA_DIR = ROOT / "dataset" / "mit-bih-arrhythmia-database-1.0.0"
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
 
-num_classes = 4
+from src.constants import (
+    AAMI_SYMBOL_TO_IDX,
+    DS1_RECORDS,
+    DS2_TEST_RECORDS,
+    NUM_CLASSES,
+    resolve_data_dir,
+)
 
-# Class labeling
-LABEL_MAP = {
-    # Normal
-    "N": 0,
-    "L": 0,
-    "R": 0,
-    "e": 0,
-    "j": 0,
-
-    # Supraventricular ectopic
-    "A": 1,
-    "a": 1,
-    "J": 1,
-    "S": 1,
-
-    # Ventricular ectopic
-    "V": 2,
-    "E": 2,
-
-    # Fusion
-    "F": 3,
-}
-
-# Training set
-TRAINING_DATA = [
-    "101", "106", "108", "109", "112", "114",
-    "115", "116", "118", "119", "122", "124",
-    "201", "203", "205", "207", "208", "209",
-    "215", "220", "223", "230",
-]
-
-# Testing set
-TESTING_DATA = [
-    "100", "103", "105", "111", "113", "117",
-    "121", "123", "200", "202", "210", "212",
-    "213", "214", "219", "221", "222", "228",
-    "231", "232", "233", "234",
-]
+DATA_DIR = Path(resolve_data_dir())
+num_classes = NUM_CLASSES
+LABEL_MAP = AAMI_SYMBOL_TO_IDX
+TRAINING_DATA = DS1_RECORDS
+TESTING_DATA = DS2_TEST_RECORDS
 
 # Load all heartbeats from the training records
 def _load_records(record_ids):

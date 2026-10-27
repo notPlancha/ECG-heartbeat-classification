@@ -3,7 +3,7 @@
 
 dataset:
   name: "MIT-BIH Arrhythmia Database"
-  raw_dir: "dataset/physionet.org/files/mitdb/1.0.0"
+  raw_dir: "dataset/mit-bih-arrhythmia-database-1.0.0"
   processed_dir: "dataset/processed"
   results_dir: "results"
   sampling_rate: 360  # Hz

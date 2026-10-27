@@ -25,119 +25,99 @@ import wfdb
 from scipy.signal import butter, filtfilt
 
 # ==============================================================================
-# Standard Dataset Partitioning Constants (AAMI / de Chazal et al., 2004)
+# Standard Constants & Dataset Partitioning (imported from src.constants)
 # ==============================================================================
 
-# DS1: Development set (22 records used for training, validation, and hyperparameter selection)
-# fmt: off
-DS1_RECORDS = [
-    "101", "106", "108", "109", "112", "114", "115", "116", "118", "119",
-    "122", "124", "201", "203", "205", "207", "208", "209", "215", "220",
-    "223", "230",
+try:
+  from src.constants import (
+    AAMI_MAPPING,
+    AAMI_SYMBOL_TO_IDX,
+    ALL_RECORDS,
+    BANDPASS_HIGHCUT,
+    BANDPASS_LOWCUT,
+    BANDPASS_ORDER,
+    CLASS_NAMES,
+    CLASS_TO_IDX,
+    DEFAULT_DATA_DIR,
+    DEFAULT_POST_R,
+    DEFAULT_PRE_R,
+    DS1_RECORDS,
+    DS1_TRAIN_RECORDS,
+    DS1_VAL_RECORDS,
+    DS2_TEST_RECORDS,
+    EXCLUDED_ANNOTATIONS,
+    IDX_TO_CLASS,
+    NORMALIZATION_CLIP_MAX,
+    NORMALIZATION_CLIP_MIN,
+    NUM_CLASSES,
+    PACED_RECORDS,
+    PREFERRED_LEAD,
+    SAMPLING_RATE,
+    WINDOW_SIZE,
+    resolve_data_dir,
+  )
+except ImportError:
+  from constants import (
+    AAMI_MAPPING,
+    AAMI_SYMBOL_TO_IDX,
+    ALL_RECORDS,
+    BANDPASS_HIGHCUT,
+    BANDPASS_LOWCUT,
+    BANDPASS_ORDER,
+    CLASS_NAMES,
+    CLASS_TO_IDX,
+    DEFAULT_DATA_DIR,
+    DEFAULT_POST_R,
+    DEFAULT_PRE_R,
+    DS1_RECORDS,
+    DS1_TRAIN_RECORDS,
+    DS1_VAL_RECORDS,
+    DS2_TEST_RECORDS,
+    EXCLUDED_ANNOTATIONS,
+    IDX_TO_CLASS,
+    NORMALIZATION_CLIP_MAX,
+    NORMALIZATION_CLIP_MIN,
+    NUM_CLASSES,
+    PACED_RECORDS,
+    PREFERRED_LEAD,
+    SAMPLING_RATE,
+    WINDOW_SIZE,
+    resolve_data_dir,
+  )
+
+__all__ = [
+  "AAMI_MAPPING",
+  "AAMI_SYMBOL_TO_IDX",
+  "ALL_RECORDS",
+  "BANDPASS_HIGHCUT",
+  "BANDPASS_LOWCUT",
+  "BANDPASS_ORDER",
+  "CLASS_NAMES",
+  "CLASS_TO_IDX",
+  "DEFAULT_DATA_DIR",
+  "DEFAULT_POST_R",
+  "DEFAULT_PRE_R",
+  "DS1_RECORDS",
+  "DS1_TRAIN_RECORDS",
+  "DS1_VAL_RECORDS",
+  "DS2_TEST_RECORDS",
+  "EXCLUDED_ANNOTATIONS",
+  "IDX_TO_CLASS",
+  "NORMALIZATION_CLIP_MAX",
+  "NORMALIZATION_CLIP_MIN",
+  "NUM_CLASSES",
+  "PACED_RECORDS",
+  "PREFERRED_LEAD",
+  "SAMPLING_RATE",
+  "WINDOW_SIZE",
+  "RecordData",
+  "assess_signal_quality",
+  "butter_bandpass_filter",
+  "extract_lead_signal",
+  "load_record",
+  "resolve_data_dir",
+  "segment_heartbeats",
 ]
-
-# Recommended patient-stratified split of DS1 into Train and Validation:
-# Validation set (5 records): chosen to ensure representation of all 4 classes
-DS1_VAL_RECORDS = ["101", "106", "108", "118", "205"]
-
-# Training set (17 records): remainder of DS1
-DS1_TRAIN_RECORDS = [r for r in DS1_RECORDS if r not in DS1_VAL_RECORDS]
-
-# DS2: Final test set (22 records held out strictly for final evaluation)
-DS2_TEST_RECORDS = [
-    "100", "103", "105", "111", "113", "117", "121", "123", "200", "202",
-    "210", "212", "213", "214", "219", "221", "222", "228", "231", "232",
-    "233", "234",
-]
-
-# Paced records: excluded according to standard AAMI recommendations
-PACED_RECORDS = ["102", "104", "107", "217"]
-
-# All 48 records in the MIT-BIH Arrhythmia Database
-ALL_RECORDS = sorted(DS1_RECORDS + DS2_TEST_RECORDS + PACED_RECORDS)
-
-# Default relative path to dataset in the workspace
-# DEFAULT_DATA_DIR = os.path.join(
-#   "dataset",
-#   "physionet.org",
-#   "files",
-#   "mitdb",
-#   "1.0.0",
-# )
-DEFAULT_DATA_DIR = os.path.join("dataset/mit-bih-arrhythmia-database-1.0.0")
-
-
-def resolve_data_dir(data_dir: str = DEFAULT_DATA_DIR) -> str:
-  """
-  Resolve data directory path using a relative path where possible.
-  Works whether invoked from the project root or subdirectories (e.g. notebooks/).
-  """
-  if os.path.exists(data_dir):
-    return data_dir
-  # Check relative path from a subdirectory like notebooks/
-  rel_parent = os.path.join("..", data_dir)
-  if os.path.exists(rel_parent):
-    return rel_parent
-  # Fallback to module directory relative path
-  module_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-  abs_candidate = os.path.join(module_dir, data_dir)
-  if os.path.exists(abs_candidate):
-    try:
-      return os.path.relpath(abs_candidate)
-    except ValueError:
-      return abs_candidate
-  return data_dir
-
-
-# ==============================================================================
-# AAMI EC57 4-Class Mapping Dictionary
-# ==============================================================================
-
-# Mapping from original MIT-BIH annotation symbol to AAMI 4-class (N, S, V, F)
-# According to ANSI/AAMI EC57:1998 standard recommendations:
-# Class N: Normal / bundle branch block beats
-# Class S: Supraventricular ectopic beats
-# Class V: Ventricular ectopic beats
-# Class F: Fusion beats
-# Non-beat markers and unclassifiable beats are excluded and logged.
-
-AAMI_MAPPING: dict[str, tuple[str, str]] = {
-  # Class N: Normal / Bundle Branch Block Beats
-  "N": ("N", "Normal beat"),
-  "L": ("N", "Left bundle branch block beat"),
-  "R": ("N", "Right bundle branch block beat"),
-  "e": ("N", "Atrial escape beat"),
-  "j": ("N", "Nodal (junctional) escape beat"),
-  # Class S: Supraventricular Ectopic Beats (SVEB)
-  "A": ("S", "Atrial premature beat"),
-  "a": ("S", "Aberrated atrial premature beat"),
-  "J": ("S", "Nodal (junctional) premature beat"),
-  "S": ("S", "Supraventricular premature beat"),
-  # Class V: Ventricular Ectopic Beats (VEB)
-  "V": ("V", "Premature ventricular contraction"),
-  "E": ("V", "Ventricular escape beat"),
-  # Class F: Fusion Beats
-  "F": ("F", "Fusion of ventricular and normal beat"),
-}
-
-# Excluded symbols: rare paced, unclassifiable beats, and rhythm/signal annotations
-EXCLUDED_ANNOTATIONS: dict[str, str] = {
-  "/": "Paced beat (excluded: artificial pacemaker morphology)",
-  "f": "Fusion of paced and normal beat (excluded: pacemaker artifact)",
-  "Q": "Unclassifiable beat (excluded: unknown morphology)",
-  "x": "Non-conducted P-wave (excluded: blocked atrial conduction)",
-  "+": "Rhythm change marker (non-beat annotation)",
-  "~": "Signal quality / noise marker (non-beat annotation)",
-  "!": "Ventricular flutter wave (non-beat rhythm marker)",
-  "|": "Isolated QRS-like artifact (non-beat annotation)",
-  "[": "Measurement / rhythm start mark (non-beat annotation)",
-  "]": "Measurement / rhythm end mark (non-beat annotation)",
-  '"': "Comment / measurement mark (non-beat annotation)",
-}
-
-CLASS_NAMES = ["N", "S", "V", "F"]
-CLASS_TO_IDX = {cls: idx for idx, cls in enumerate(CLASS_NAMES)}
-IDX_TO_CLASS = {idx: cls for idx, cls in enumerate(CLASS_NAMES)}
 
 
 # ==============================================================================
