@@ -57,14 +57,14 @@ PACED_RECORDS = ["102", "104", "107", "217"]
 ALL_RECORDS = sorted(DS1_RECORDS + DS2_TEST_RECORDS + PACED_RECORDS)
 
 # Default relative path to dataset in the workspace
-DEFAULT_DATA_DIR = os.path.join(
-  "dataset",
-  "physionet.org",
-  "files",
-  "mitdb",
-  "1.0.0",
-)
-# fmt: on
+# DEFAULT_DATA_DIR = os.path.join(
+#   "dataset",
+#   "physionet.org",
+#   "files",
+#   "mitdb",
+#   "1.0.0",
+# )
+DEFAULT_DATA_DIR = os.path.join("dataset/mit-bih-arrhythmia-database-1.0.0")
 
 
 def resolve_data_dir(data_dir: str = DEFAULT_DATA_DIR) -> str:
