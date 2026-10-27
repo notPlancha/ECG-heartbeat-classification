@@ -36,6 +36,8 @@ test_loader = DataLoader(
     shuffle=False
 )
 
+#data validation set 20% of training data
+
 inputs = 256 #number of signals per heartbeat
 outputs = 4  #number of classifications
 

@@ -123,5 +123,6 @@ def load_training_data():
 def load_testing_data():
     return _load_records(TESTING_DATA)
 
+
 if __name__ == "__main__":
     X_train, y_train = load_training_data()
