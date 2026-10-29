@@ -3,6 +3,7 @@ from data_loader import load_training_data, load_testing_data
 import numpy as np
 import matplotlib.pyplot as plt
 
+from imblearn.under_sampling import RandomUnderSampler
 from imblearn.over_sampling import RandomOverSampler
 
 from sklearn.ensemble import RandomForestClassifier
@@ -13,6 +14,10 @@ from sklearn.metrics import (
     f1_score,
     accuracy_score
 )
+
+# --------------------------------------------------
+# 1. Load training and testing data
+# --------------------------------------------------
 
 heartbeats_training, annotations_training = load_training_data()
 heartbeats_testing, annotations_testing = load_testing_data()
@@ -36,6 +41,10 @@ class_names = [
     "F - Fusion"
 ]
 
+# --------------------------------------------------
+# 2. Inspect original class distribution
+# --------------------------------------------------
+
 original_counts = np.bincount(
     y_train,
     minlength=num_classes
@@ -46,64 +55,113 @@ print("Original training class counts:")
 for name, count in zip(class_names, original_counts):
     print(f"{name}: {count}")
 
-# Check that all four classes are present
 if np.any(original_counts == 0):
     raise ValueError(
         "At least one class is missing from the training data."
     )
 
+# --------------------------------------------------
+# 3. Undersample class N
+# --------------------------------------------------
 
-# Target count = number of samples in the largest class
-target_count = int(original_counts.max())
+# Keep at most twice the original number of F samples
+target_N = min(
+    original_counts[0],
+    int(original_counts[3] * 2)
+)
 
-# Increase every smaller class to the target count
+print(f"\nTarget number of N samples: {target_N}")
+
+under_sampler = RandomUnderSampler(
+    sampling_strategy={0: target_N},
+    random_state=42
+)
+
+X_train_under, y_train_under = under_sampler.fit_resample(
+    X_train,
+    y_train
+)
+
+under_counts = np.bincount(
+    y_train_under,
+    minlength=num_classes
+)
+
+print("\nClass counts after undersampling N:")
+
+for name, count in zip(class_names, under_counts):
+    print(f"{name}: {count}")
+
+# --------------------------------------------------
+# 4. Targeted oversampling
+# --------------------------------------------------
+
+# Targets are based on the original largest class
+majority_count = int(original_counts.max())
+
 sampling_strategy = {
-    cls: target_count
-    for cls in range(num_classes)
-    if original_counts[cls] < target_count
+    1: int(majority_count * 0.75),  # S: 75%
+    2: int(majority_count * 0.25),  # V: 25%
+    3: int(majority_count * 0.75)   # F: 75%
 }
+
+# Only oversample classes below their targets
+sampling_strategy = {
+    cls: target
+    for cls, target in sampling_strategy.items()
+    if under_counts[cls] < target
+}
+
+print("\nTargeted oversampling targets:")
+
+for cls, target in sampling_strategy.items():
+    print(f"{class_names[cls]}: {target}")
 
 oversampler = RandomOverSampler(
     sampling_strategy=sampling_strategy,
     random_state=42
 )
 
-X_train_resampled, y_train_resampled = (
-    oversampler.fit_resample(X_train, y_train)
+X_train_resampled, y_train_resampled = oversampler.fit_resample(
+    X_train_under,
+    y_train_under
 )
-
 
 resampled_counts = np.bincount(
     y_train_resampled,
     minlength=num_classes
 )
 
-print("\nBalanced training class counts:")
+print("\nFinal training class counts:")
 
 for name, count in zip(class_names, resampled_counts):
     print(f"{name}: {count}")
 
-print(
-    "\nTotal original training samples:",
-    len(y_train)
-)
+print("\nTotal original training samples:", len(y_train))
+print("Total final training samples:", len(y_train_resampled))
 
-print(
-    "Total resampled training samples:",
-    len(y_train_resampled)
-)
-
+# --------------------------------------------------
+# 5. Define the Random Forest
+# --------------------------------------------------
 
 random_forest = RandomForestClassifier(
-    n_estimators=300,
-    max_features="sqrt",
-    min_samples_leaf=2,
+    n_estimators=500,
+    max_features=0.2,
+    max_depth=20,
+    min_samples_split=2,
+    min_samples_leaf=1,
+    bootstrap=True,
+    max_samples=0.5,
     class_weight=None,
     random_state=42,
     n_jobs=-1
 )
 
-print("\nTraining Random Forest with balanced data...")
+# --------------------------------------------------
+# 6. Train the model
+# --------------------------------------------------
+
+print("\nTraining Random Forest with undersampling and targeted oversampling...")
 
 random_forest.fit(
     X_train_resampled,
@@ -112,8 +170,10 @@ random_forest.fit(
 
 print("Training complete!")
 
+# --------------------------------------------------
+# 7. Evaluate on the original, untouched test data
+# --------------------------------------------------
 
-# IMPORTANT: The test data is not oversampled
 y_pred = random_forest.predict(X_test)
 
 accuracy = accuracy_score(y_test, y_pred)
@@ -143,6 +203,10 @@ macro_f1 = f1_score(
 
 print(f"Macro F1-score: {macro_f1:.4f}")
 
+# --------------------------------------------------
+# 8. Confusion matrix
+# --------------------------------------------------
+
 cm = confusion_matrix(
     y_test,
     y_pred,
@@ -161,9 +225,13 @@ ConfusionMatrixDisplay(
     values_format="d"
 )
 
-plt.title("Random Forest - Full Oversampling")
+plt.title("Random Forest - N Undersampling + Targeted Oversampling")
 plt.tight_layout()
 plt.show()
+
+# --------------------------------------------------
+# 9. Feature importance
+# --------------------------------------------------
 
 importances = random_forest.feature_importances_
 
