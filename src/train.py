@@ -693,6 +693,7 @@ def run_training(
       "model_class": type(model).__name__,
       "parameters": model.count_parameters(),
       "seed": seed,
+      "quick_test": quick_test,
       "class_weight": class_weight,
       "resample": resample,
       "augment": augment,

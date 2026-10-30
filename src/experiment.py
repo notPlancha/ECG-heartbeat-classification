@@ -193,6 +193,7 @@ def save_run_settings(
     f"Model Class:         {settings.get('model_class', 'N/A')}",
     f"Parameters:          {settings.get('parameters', 'N/A')}",
     f"Random Seed:         {settings.get('seed', 'N/A')}",
+    f"Quick Test:          {settings.get('quick_test', False)}",
   ]
 
   hyperparams = settings.get("hyperparameters", {})
