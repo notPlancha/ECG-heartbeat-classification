@@ -81,7 +81,7 @@ class RandomForest:
     max_depth: int | None = 20,
     min_samples_leaf: int = 2,
     max_features: str | float = "sqrt",
-    class_weight: str | None = "balanced",
+    class_weight: str | dict[int, float] | None = "balanced",
     random_state: int = 42,
     n_jobs: int = -1,
     **kwargs: Any,

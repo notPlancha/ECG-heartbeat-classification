@@ -9,8 +9,10 @@ import argparse
 import os
 import sys
 from pathlib import Path
+from typing import Any
 
 import joblib
+import numpy as np
 import torch
 from sklearn.metrics import accuracy_score, precision_recall_fscore_support
 from torch import nn
@@ -52,6 +54,55 @@ def compute_metrics(
   }
 
 
+def resolve_class_weights(
+  dataset: ECGDataset, strategy: str | None
+) -> tuple[torch.Tensor | None, np.ndarray | None, Any]:
+  """
+  Resolve class weighting strategy into PyTorch tensor, numpy array,
+  and model-specific parameter (such as for scikit-learn).
+  """
+  if not strategy or strategy.lower() in ("none", "uniform"):
+    return None, None, None
+
+  strategy_clean = strategy.strip()
+  if "," in strategy_clean:
+    raw = [float(x.strip()) for x in strategy_clean.split(",")]
+    if len(raw) != NUM_CLASSES:
+      raise ValueError(
+        f"Expected {NUM_CLASSES} class weights, got {len(raw)} in '{strategy}'"
+      )
+    weights_np = np.array(raw, dtype=np.float32)
+    weights_torch = torch.from_numpy(weights_np).float()
+    rf_param = {i: float(w) for i, w in enumerate(weights_np)}
+    return weights_torch, weights_np, rf_param
+
+  mode = strategy_clean.lower()
+  if mode in ("balanced", "inverse"):
+    weights_np = dataset.compute_class_weights("inverse")
+    weights_torch = torch.from_numpy(weights_np).float()
+    return weights_torch, weights_np, "balanced"
+  elif mode == "sqrt_inverse":
+    weights_np = dataset.compute_class_weights("sqrt_inverse")
+    weights_torch = torch.from_numpy(weights_np).float()
+    rf_param = {i: float(w) for i, w in enumerate(weights_np)}
+    return weights_torch, weights_np, rf_param
+  elif mode == "effective":
+    weights_np = dataset.compute_class_weights("effective")
+    weights_torch = torch.from_numpy(weights_np).float()
+    rf_param = {i: float(w) for i, w in enumerate(weights_np)}
+    return weights_torch, weights_np, rf_param
+  elif mode == "balanced_subsample":
+    weights_np = dataset.compute_class_weights("inverse")
+    weights_torch = torch.from_numpy(weights_np).float()
+    return weights_torch, weights_np, "balanced_subsample"
+  else:
+    valid = ["balanced", "inverse", "sqrt_inverse", "effective", "none"]
+    raise ValueError(
+      f"Unknown class weight strategy '{strategy}'. Choices: {valid} "
+      "or comma-separated values (e.g. '1.0,10.0,5.0,20.0')."
+    )
+
+
 def load_data(
   train_path: str = "dataset/processed/train.npz",
   val_path: str = "dataset/processed/val.npz",
@@ -59,7 +110,8 @@ def load_data(
   augment: bool = False,
   balanced_sampling: bool = False,
   quick_test: bool = False,
-) -> tuple[DataLoader, DataLoader, torch.Tensor]:
+  class_weight: str | None = "balanced",
+) -> tuple[DataLoader, DataLoader, torch.Tensor | None]:
   """
   Load preprocessed .npz datasets and return train/val loaders with class weights.
   """
@@ -83,8 +135,7 @@ def load_data(
     val_ds.X = val_ds.X[:500]
     val_ds.y = val_ds.y[:500]
 
-  weights_np = train_ds.compute_class_weights("inverse")
-  class_weights = torch.from_numpy(weights_np).float()
+  class_weights_torch, _, _ = resolve_class_weights(train_ds, class_weight)
 
   train_loader = get_data_loader(
     train_ds,
@@ -103,7 +154,7 @@ def load_data(
   print(f"Train distribution: {train_ds.get_class_counts()}")
   print(f"Val distribution:   {val_ds.get_class_counts()}")
 
-  return train_loader, val_loader, class_weights
+  return train_loader, val_loader, class_weights_torch
 
 
 def train_one_epoch(
@@ -221,20 +272,27 @@ def train_random_forest(
   print(f"Train class distribution: {train_ds.get_class_counts()}")
   print(f"Val class distribution:   {val_ds.get_class_counts()}")
 
-  weight_param = None if class_weight == "none" else class_weight
+  _, weights_np, rf_param = resolve_class_weights(train_ds, class_weight)
 
   model = get_model(
     "RandomForest",
     n_estimators=n_estimators,
     max_depth=max_depth,
     min_samples_leaf=min_samples_leaf,
-    class_weight=weight_param,
+    class_weight=rf_param,
     random_state=random_state,
   )
 
+  weight_desc = (
+    rf_param
+    if isinstance(rf_param, str)
+    else (
+      [round(float(w), 4) for w in weights_np] if weights_np is not None else "None"
+    )
+  )
   print(
     f"Training Random Forest (n_estimators={n_estimators}, max_depth={max_depth}, "
-    f"class_weight={weight_param})..."
+    f"class_weight={weight_desc})..."
   )
   model.fit(X_train, y_train)
 
@@ -298,12 +356,14 @@ def run_training(
     augment=augment,
     balanced_sampling=balanced_sampling,
     quick_test=quick_test,
+    class_weight=class_weight,
   )
 
   model = get_model(model_name, input_dim=WINDOW_SIZE, num_classes=NUM_CLASSES)
   model = model.to(device)
 
-  class_weights = class_weights.to(device)
+  if class_weights is not None:
+    class_weights = class_weights.to(device)
   criterion = nn.CrossEntropyLoss(weight=class_weights)
 
   if optimizer_name.lower() == "adam":
@@ -315,7 +375,12 @@ def run_training(
 
   param_count = sum(p.numel() for p in model.parameters())
   print(f"Model: {type(model).__name__} ({param_count} parameters)")
-  print(f"Class weights (N, S, V, F): {[round(w, 4) for w in class_weights.tolist()]}")
+  if class_weights is not None:
+    print(
+      f"Class weights (N, S, V, F): {[round(w, 4) for w in class_weights.tolist()]}"
+    )
+  else:
+    print("Class weights: None (unweighted cross-entropy loss)")
   print("-" * 78)
 
   best_val_f1 = 0.0
@@ -445,9 +510,12 @@ def main() -> None:
   parser.add_argument(
     "--class-weight",
     type=str,
-    choices=["balanced", "none"],
     default="balanced",
-    help="Class weighting mode for Random Forest (default: balanced).",
+    help=(
+      "Class weighting strategy across all models: "
+      "'balanced' (inverse frequency), 'sqrt_inverse', 'effective', 'none', "
+      "or comma-separated values (e.g. '1.0,10.0,5.0,20.0'). Default: balanced."
+    ),
   )
   args = parser.parse_args()
 
