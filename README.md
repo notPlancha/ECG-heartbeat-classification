@@ -55,14 +55,17 @@ ECG-heartbeat-classification/
 │   └── preprocessing_config.yaml  # Configurable filter, windowing, and split parameters
 │
 └── results/
-    ├── metrics.csv                # Overall test performance metrics
-    ├── per_class_metrics.csv      # Per-class precision, recall, and F1 metrics
-    ├── confusion_matrix.csv       # Test set confusion matrix table
-    ├── confusion_matrix.png       # Test set confusion matrix visualization
+    ├── metrics.csv                # Benchmark comparison table across all models
+    ├── confusion_matrix.csv       # Latest test set confusion matrix table
+    ├── confusion_matrix.png       # Latest test set confusion matrix visualization
+    ├── per_class_metrics.csv      # Latest per-class precision, recall, and F1 metrics
     ├── dataset_statistics.csv     # Summary table of beat counts by split and class
     ├── dataset_statistics.json    # Machine-readable detailed split metrics and exclusions
     ├── per_record_distribution.csv# Per-patient class counts illustrating heterogeneity
-    └── data_quality_report.csv    # Quality audit (missing data, amplitudes, baseline wander)
+    ├── data_quality_report.csv    # Quality audit (missing data, amplitudes, baseline wander)
+    ├── models/                    # Serialized model weights and checkpoints (.pt, .joblib)
+    ├── figures/                   # Rendered confusion matrices and diagnostic charts
+    └── tables/                    # Per-model per-class metrics and confusion matrix CSVs
 ```
 
 ---

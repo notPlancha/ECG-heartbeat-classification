@@ -1,0 +1,28 @@
+# Model Training and Baseline Configuration
+# ECG Heartbeat Classification on Edge-AI
+# Target: Analog Devices MAX78002 and classical baselines
+
+paths:
+  train_data: "dataset/processed/train.npz"
+  val_data: "dataset/processed/val.npz"
+  test_data: "dataset/processed/test.npz"
+  results_dir: "results"
+  models_dir: "results/models"
+  figures_dir: "results/figures"
+  tables_dir: "results/tables"
+
+training:
+  epochs: 15
+  learning_rate: 0.01
+  optimizer: "sgd"
+  batch_size: 64
+  class_weight: "balanced"
+  random_seed: 42
+
+random_forest:
+  n_estimators: 100
+  max_depth: 20
+  min_samples_leaf: 2
+  max_features: "sqrt"
+  class_weight: "balanced"
+  random_state: 42

@@ -184,9 +184,9 @@ class ECGDataset(Dataset):
     return cls(
       X=data["X"],
       y=data["y"],
-      record_ids=data["records"] if "records" in data else None,
-      r_peaks=data["r_peaks"] if "r_peaks" in data else None,
-      symbols=data["symbols"] if "symbols" in data else None,
+      record_ids=data.get("records", None),
+      r_peaks=data.get("r_peaks", None),
+      symbols=data.get("symbols", None),
       augment=augment,
       to_torch=to_torch,
     )

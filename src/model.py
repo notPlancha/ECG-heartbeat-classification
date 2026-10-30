@@ -13,9 +13,27 @@ from sklearn.ensemble import RandomForestClassifier
 from torch import nn
 
 try:
-  from src.constants import NUM_CLASSES, WINDOW_SIZE
+  from src.constants import (
+    DEFAULT_CLASS_WEIGHT,
+    DEFAULT_RANDOM_STATE,
+    DEFAULT_RF_MAX_DEPTH,
+    DEFAULT_RF_MAX_FEATURES,
+    DEFAULT_RF_MIN_SAMPLES_LEAF,
+    DEFAULT_RF_N_ESTIMATORS,
+    NUM_CLASSES,
+    WINDOW_SIZE,
+  )
 except ImportError:
-  from constants import NUM_CLASSES, WINDOW_SIZE
+  from constants import (
+    DEFAULT_CLASS_WEIGHT,
+    DEFAULT_RANDOM_STATE,
+    DEFAULT_RF_MAX_DEPTH,
+    DEFAULT_RF_MAX_FEATURES,
+    DEFAULT_RF_MIN_SAMPLES_LEAF,
+    DEFAULT_RF_N_ESTIMATORS,
+    NUM_CLASSES,
+    WINDOW_SIZE,
+  )
 
 
 class BaseECGModel(ABC):
@@ -97,9 +115,9 @@ class ClassicalECGModel(BaseECGModel):
     if isinstance(x, torch.Tensor):
       x = x.detach().cpu().numpy()
     match x.shape:
-      case (n, 1, _):
+      case (_, 1, _):
         return x.squeeze(1)
-      case (n, *dims) if len(dims) > 1:
+      case (n, *_) if len(x.shape) > 2:
         return x.reshape(n, -1)
       case _:
         return x
@@ -144,12 +162,12 @@ class RandomForest(ClassicalECGModel):
     self,
     input_dim: int = WINDOW_SIZE,
     num_classes: int = NUM_CLASSES,
-    n_estimators: int = 100,
-    max_depth: int | None = 20,
-    min_samples_leaf: int = 2,
-    max_features: str | float = "sqrt",
-    class_weight: str | dict[int, float] | None = "balanced",
-    random_state: int = 42,
+    n_estimators: int = DEFAULT_RF_N_ESTIMATORS,
+    max_depth: int | None = DEFAULT_RF_MAX_DEPTH,
+    min_samples_leaf: int = DEFAULT_RF_MIN_SAMPLES_LEAF,
+    max_features: str | float = DEFAULT_RF_MAX_FEATURES,
+    class_weight: str | dict[int, float] | None = DEFAULT_CLASS_WEIGHT,
+    random_state: int = DEFAULT_RANDOM_STATE,
     n_jobs: int = -1,
     **kwargs: Any,
   ) -> None:

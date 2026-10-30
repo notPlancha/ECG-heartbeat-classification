@@ -23,7 +23,40 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 if str(PROJECT_ROOT) not in sys.path:
   sys.path.insert(0, str(PROJECT_ROOT))
 
-from src.constants import CLASS_NAMES, NUM_CLASSES, WINDOW_SIZE
+try:
+  from src.constants import (
+    CLASS_NAMES,
+    DEFAULT_BATCH_SIZE,
+    DEFAULT_CLASS_WEIGHT,
+    DEFAULT_EPOCHS,
+    DEFAULT_LR,
+    DEFAULT_MODELS_DIR,
+    DEFAULT_OPTIMIZER,
+    DEFAULT_RANDOM_STATE,
+    DEFAULT_RF_MAX_DEPTH,
+    DEFAULT_RF_N_ESTIMATORS,
+    DEFAULT_TRAIN_PATH,
+    DEFAULT_VAL_PATH,
+    NUM_CLASSES,
+    WINDOW_SIZE,
+  )
+except ImportError:
+  from constants import (
+    CLASS_NAMES,
+    DEFAULT_BATCH_SIZE,
+    DEFAULT_CLASS_WEIGHT,
+    DEFAULT_EPOCHS,
+    DEFAULT_LR,
+    DEFAULT_MODELS_DIR,
+    DEFAULT_OPTIMIZER,
+    DEFAULT_RANDOM_STATE,
+    DEFAULT_RF_MAX_DEPTH,
+    DEFAULT_RF_N_ESTIMATORS,
+    DEFAULT_TRAIN_PATH,
+    DEFAULT_VAL_PATH,
+    NUM_CLASSES,
+    WINDOW_SIZE,
+  )
 
 
 def to_snake_case(name: str) -> str:
@@ -118,13 +151,13 @@ def resolve_class_weights(
 
 
 def load_data(
-  train_path: str = "dataset/processed/train.npz",
-  val_path: str = "dataset/processed/val.npz",
-  batch_size: int = 64,
+  train_path: str = DEFAULT_TRAIN_PATH,
+  val_path: str = DEFAULT_VAL_PATH,
+  batch_size: int = DEFAULT_BATCH_SIZE,
   augment: bool = False,
   balanced_sampling: bool = False,
   quick_test: bool = False,
-  class_weight: str | None = "balanced",
+  class_weight: str | None = DEFAULT_CLASS_WEIGHT,
 ) -> tuple[DataLoader, DataLoader, torch.Tensor | None]:
   """
   Load preprocessed .npz datasets and return train/val loaders with class weights.
@@ -250,10 +283,10 @@ def evaluate_neural(
 
 def train_classical_model(
   model: ClassicalECGModel,
-  train_path: str = "dataset/processed/train.npz",
-  val_path: str = "dataset/processed/val.npz",
+  train_path: str = DEFAULT_TRAIN_PATH,
+  val_path: str = DEFAULT_VAL_PATH,
   quick_test: bool = False,
-  save_path: str = "results/classical_model.joblib",
+  save_path: str | None = None,
 ) -> None:
   """
   Train any classical (non-neural) model adhering to ClassicalECGModel.
@@ -262,6 +295,10 @@ def train_classical_model(
     raise FileNotFoundError(f"Training file '{train_path}' not found.")
   if not os.path.exists(val_path):
     raise FileNotFoundError(f"Validation file '{val_path}' not found.")
+
+  slug = to_snake_case(type(model).__name__)
+  if save_path is None:
+    save_path = os.path.join(DEFAULT_MODELS_DIR, f"{slug}.joblib")
 
   print(f"Loading training split from {train_path}...")
   train_ds = ECGDataset.from_npz(train_path, augment=False)
@@ -310,21 +347,25 @@ def train_classical_model(
 
 def train_neural_model(
   model: NeuralECGModel,
-  train_path: str = "dataset/processed/train.npz",
-  val_path: str = "dataset/processed/val.npz",
-  epochs: int = 15,
-  lr: float = 0.01,
-  optimizer_name: str = "sgd",
-  batch_size: int = 64,
+  train_path: str = DEFAULT_TRAIN_PATH,
+  val_path: str = DEFAULT_VAL_PATH,
+  epochs: int = DEFAULT_EPOCHS,
+  lr: float = DEFAULT_LR,
+  optimizer_name: str = DEFAULT_OPTIMIZER,
+  batch_size: int = DEFAULT_BATCH_SIZE,
   augment: bool = False,
   balanced_sampling: bool = False,
   quick_test: bool = False,
-  class_weight: str | None = "balanced",
-  save_path: str = "results/best_model.pt",
+  class_weight: str | None = DEFAULT_CLASS_WEIGHT,
+  save_path: str | None = None,
 ) -> None:
   """
   Train any neural network adhering to NeuralECGModel.
   """
+  slug = to_snake_case(type(model).__name__)
+  if save_path is None:
+    save_path = os.path.join(DEFAULT_MODELS_DIR, f"{slug}.pt")
+
   device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
   print(f"Using device: {device}")
 
@@ -419,21 +460,27 @@ def train_neural_model(
 
 def run_training(
   model_name: str = "LogisticRegression",
-  epochs: int = 15,
-  lr: float = 0.01,
-  optimizer_name: str = "sgd",
-  batch_size: int = 64,
+  train_path: str = DEFAULT_TRAIN_PATH,
+  val_path: str = DEFAULT_VAL_PATH,
+  epochs: int = DEFAULT_EPOCHS,
+  lr: float = DEFAULT_LR,
+  optimizer_name: str = DEFAULT_OPTIMIZER,
+  batch_size: int = DEFAULT_BATCH_SIZE,
   augment: bool = False,
   balanced_sampling: bool = False,
   quick_test: bool = False,
   save_path: str | None = None,
-  n_estimators: int = 100,
-  max_depth: int | None = 20,
-  class_weight: str | None = "balanced",
+  n_estimators: int = DEFAULT_RF_N_ESTIMATORS,
+  max_depth: int | None = DEFAULT_RF_MAX_DEPTH,
+  class_weight: str | None = DEFAULT_CLASS_WEIGHT,
+  random_state: int = DEFAULT_RANDOM_STATE,
 ) -> None:
   """
   Instantiate model and dispatch to classical or neural pipeline via base class check.
   """
+  torch.manual_seed(random_state)
+  np.random.seed(random_state)
+
   model = get_model(
     model_name,
     input_dim=WINDOW_SIZE,
@@ -441,23 +488,28 @@ def run_training(
     n_estimators=n_estimators,
     max_depth=max_depth,
     class_weight=class_weight,
+    random_state=random_state,
   )
 
   slug = to_snake_case(type(model).__name__)
   match model:
     case ClassicalECGModel():
-      if save_path is None or save_path == "results/best_model.pt":
-        save_path = f"results/{slug}.joblib"
+      if save_path is None:
+        save_path = os.path.join(DEFAULT_MODELS_DIR, f"{slug}.joblib")
       train_classical_model(
         model=model,
+        train_path=train_path,
+        val_path=val_path,
         quick_test=quick_test,
         save_path=save_path,
       )
     case NeuralECGModel():
-      if save_path is None or save_path == "results/best_model.pt":
-        save_path = f"results/{slug}.pt"
+      if save_path is None:
+        save_path = os.path.join(DEFAULT_MODELS_DIR, f"{slug}.pt")
       train_neural_model(
         model=model,
+        train_path=train_path,
+        val_path=val_path,
         epochs=epochs,
         lr=lr,
         optimizer_name=optimizer_name,
@@ -486,29 +538,41 @@ def main() -> None:
     help=f"Model to train. Choices: {model_choices}.",
   )
   parser.add_argument(
+    "--train-path",
+    type=str,
+    default=DEFAULT_TRAIN_PATH,
+    help=f"Path to training .npz file (default: {DEFAULT_TRAIN_PATH}).",
+  )
+  parser.add_argument(
+    "--val-path",
+    type=str,
+    default=DEFAULT_VAL_PATH,
+    help=f"Path to validation .npz file (default: {DEFAULT_VAL_PATH}).",
+  )
+  parser.add_argument(
     "--epochs",
     type=int,
-    default=15,
-    help="Number of epochs to train (for neural models, default: 15).",
+    default=DEFAULT_EPOCHS,
+    help=f"Number of epochs to train (for neural models, default: {DEFAULT_EPOCHS}).",
   )
   parser.add_argument(
     "--lr",
     type=float,
-    default=0.01,
-    help="Learning rate (default: 0.01).",
+    default=DEFAULT_LR,
+    help=f"Learning rate (default: {DEFAULT_LR}).",
   )
   parser.add_argument(
     "--optimizer",
     type=str,
     choices=["sgd", "adam"],
-    default="sgd",
-    help="Optimizer: 'sgd' or 'adam' (default: sgd).",
+    default=DEFAULT_OPTIMIZER,
+    help=f"Optimizer: 'sgd' or 'adam' (default: {DEFAULT_OPTIMIZER}).",
   )
   parser.add_argument(
     "--batch-size",
     type=int,
-    default=64,
-    help="Batch size (default: 64).",
+    default=DEFAULT_BATCH_SIZE,
+    help=f"Batch size (default: {DEFAULT_BATCH_SIZE}).",
   )
   parser.add_argument(
     "--augment",
@@ -529,29 +593,38 @@ def main() -> None:
     "--save-path",
     type=str,
     default=None,
-    help="File path to save the best model weights.",
+    help="File path to save the best model weights (default: results/models/<model_slug>.<ext>).",
   )
   parser.add_argument(
     "--n-estimators",
     type=int,
-    default=100,
-    help="Number of trees in Random Forest (default: 100).",
+    default=DEFAULT_RF_N_ESTIMATORS,
+    help=f"Number of trees in Random Forest (default: {DEFAULT_RF_N_ESTIMATORS}).",
   )
   parser.add_argument(
     "--max-depth",
     type=int,
-    default=20,
-    help="Max tree depth in Random Forest (default: 20, -1 for unconstrained).",
+    default=DEFAULT_RF_MAX_DEPTH,
+    help=f"Max tree depth in Random Forest (default: {DEFAULT_RF_MAX_DEPTH}, -1 for unconstrained).",
   )
   parser.add_argument(
     "--class-weight",
     type=str,
-    default="balanced",
+    default=DEFAULT_CLASS_WEIGHT,
     help=(
       "Class weighting strategy across all models: "
       "'balanced', 'sqrt_inverse', 'effective', 'none', "
-      "or comma-separated values (e.g. '1.0,10.0,5.0,20.0'). Default: balanced."
+      "or comma-separated values (e.g. '1.0,10.0,5.0,20.0'). "
+      f"Default: {DEFAULT_CLASS_WEIGHT}."
     ),
+  )
+  parser.add_argument(
+    "--seed",
+    "--random-state",
+    dest="random_state",
+    type=int,
+    default=DEFAULT_RANDOM_STATE,
+    help=f"Random seed for reproducibility (default: {DEFAULT_RANDOM_STATE}).",
   )
   args = parser.parse_args()
 
@@ -559,6 +632,8 @@ def main() -> None:
 
   run_training(
     model_name=args.model,
+    train_path=args.train_path,
+    val_path=args.val_path,
     epochs=args.epochs,
     lr=args.lr,
     optimizer_name=args.optimizer,
@@ -570,6 +645,7 @@ def main() -> None:
     n_estimators=args.n_estimators,
     max_depth=max_depth,
     class_weight=args.class_weight,
+    random_state=args.random_state,
   )
 
 

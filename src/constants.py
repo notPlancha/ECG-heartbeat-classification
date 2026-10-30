@@ -256,3 +256,35 @@ def resolve_data_dir(data_dir: str | None = None, search_depth: int = 2) -> str:
   # 4. Fallback to default path relative to cwd where possible
   default_path = repo_root / DEFAULT_DATA_DIR
   return _to_rel(default_path)
+
+
+# ==============================================================================
+# Pipeline Directory & File Path Defaults
+# ==============================================================================
+
+DEFAULT_PROCESSED_DIR: str = os.path.join("dataset", "processed")
+DEFAULT_TRAIN_PATH: str = os.path.join(DEFAULT_PROCESSED_DIR, "train.npz")
+DEFAULT_VAL_PATH: str = os.path.join(DEFAULT_PROCESSED_DIR, "val.npz")
+DEFAULT_TEST_PATH: str = os.path.join(DEFAULT_PROCESSED_DIR, "test.npz")
+
+DEFAULT_RESULTS_DIR: str = "results"
+DEFAULT_MODELS_DIR: str = os.path.join(DEFAULT_RESULTS_DIR, "models")
+DEFAULT_FIGURES_DIR: str = os.path.join(DEFAULT_RESULTS_DIR, "figures")
+DEFAULT_TABLES_DIR: str = os.path.join(DEFAULT_RESULTS_DIR, "tables")
+
+
+# ==============================================================================
+# Model & Training Defaults
+# ==============================================================================
+
+DEFAULT_EPOCHS: int = 15
+DEFAULT_LR: float = 0.01
+DEFAULT_OPTIMIZER: str = "sgd"
+DEFAULT_BATCH_SIZE: int = 64
+DEFAULT_CLASS_WEIGHT: str = "balanced"
+DEFAULT_RANDOM_STATE: int = 42
+
+DEFAULT_RF_N_ESTIMATORS: int = 100
+DEFAULT_RF_MAX_DEPTH: int = 20
+DEFAULT_RF_MIN_SAMPLES_LEAF: int = 2
+DEFAULT_RF_MAX_FEATURES: str = "sqrt"

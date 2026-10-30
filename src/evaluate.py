@@ -30,7 +30,31 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 if str(PROJECT_ROOT) not in sys.path:
   sys.path.insert(0, str(PROJECT_ROOT))
 
-from src.constants import CLASS_NAMES, NUM_CLASSES, WINDOW_SIZE
+try:
+  from src.constants import (
+    CLASS_NAMES,
+    DEFAULT_BATCH_SIZE,
+    DEFAULT_FIGURES_DIR,
+    DEFAULT_MODELS_DIR,
+    DEFAULT_RESULTS_DIR,
+    DEFAULT_TABLES_DIR,
+    DEFAULT_TEST_PATH,
+    NUM_CLASSES,
+    WINDOW_SIZE,
+  )
+except ImportError:
+  from constants import (
+    CLASS_NAMES,
+    DEFAULT_BATCH_SIZE,
+    DEFAULT_FIGURES_DIR,
+    DEFAULT_MODELS_DIR,
+    DEFAULT_RESULTS_DIR,
+    DEFAULT_TABLES_DIR,
+    DEFAULT_TEST_PATH,
+    NUM_CLASSES,
+    WINDOW_SIZE,
+  )
+
 from src.dataset import ECGDataset, get_data_loader
 from src.model import (
   MODELS,
@@ -184,13 +208,20 @@ def load_checkpoint(model: NeuralECGModel, checkpoint_path: str) -> None:
 def evaluate_model(
   model_name: str = "LogisticRegression",
   checkpoint_path: str | None = None,
-  data_path: str = "dataset/processed/test.npz",
-  batch_size: int = 64,
-  output_dir: str = "results",
+  data_path: str = DEFAULT_TEST_PATH,
+  batch_size: int = DEFAULT_BATCH_SIZE,
+  results_dir: str = DEFAULT_RESULTS_DIR,
+  models_dir: str = DEFAULT_MODELS_DIR,
+  figures_dir: str = DEFAULT_FIGURES_DIR,
+  tables_dir: str = DEFAULT_TABLES_DIR,
+  output_dir: str | None = None,
 ) -> dict[str, object]:
   """
   Full evaluation flow: load data, restore model, compute metrics, and export artifacts.
   """
+  if output_dir is not None:
+    results_dir = output_dir
+
   device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
   print(f"Device: {device}")
   print(f"Loading test split from {data_path}...")
@@ -207,19 +238,25 @@ def evaluate_model(
   print(f"Class distribution: {test_ds.get_class_counts()}")
 
   model = get_model(model_name, input_dim=WINDOW_SIZE, num_classes=NUM_CLASSES)
-
   slug = to_snake_case(type(model).__name__)
+
   if checkpoint_path is None:
     match model:
       case ClassicalECGModel():
-        checkpoint_path = f"results/{slug}.joblib"
+        cand_models = os.path.join(models_dir, f"{slug}.joblib")
+        cand_results = os.path.join(results_dir, f"{slug}.joblib")
+        checkpoint_path = cand_models if os.path.exists(cand_models) else cand_results
       case NeuralECGModel():
-        checkpoint_path = f"results/{slug}.pt"
+        cand_models = os.path.join(models_dir, f"{slug}.pt")
+        cand_results = os.path.join(results_dir, f"{slug}.pt")
+        checkpoint_path = cand_models if os.path.exists(cand_models) else cand_results
       case _:
         raise TypeError(f"Unsupported model type: {type(model)}")
 
   if not os.path.exists(checkpoint_path):
-    raise FileNotFoundError(f"Checkpoint file not found: {checkpoint_path}")
+    raise FileNotFoundError(
+      f"Checkpoint file not found: {checkpoint_path}. Train the model first."
+    )
 
   match model:
     case ClassicalECGModel():
@@ -258,9 +295,10 @@ def evaluate_model(
   cm_df = pd.DataFrame(cm, index=CLASS_NAMES, columns=CLASS_NAMES)
   print(cm_df)
 
-  os.makedirs(output_dir, exist_ok=True)
+  os.makedirs(results_dir, exist_ok=True)
+  os.makedirs(figures_dir, exist_ok=True)
+  os.makedirs(tables_dir, exist_ok=True)
   model_tag = type(model).__name__
-  slug = to_snake_case(model_tag)
 
   row_data = {
     "Model": model_tag,
@@ -271,7 +309,7 @@ def evaluate_model(
     "Macro_Precision": results["macro_precision"],
   }
 
-  metrics_csv = os.path.join(output_dir, "metrics.csv")
+  metrics_csv = os.path.join(results_dir, "metrics.csv")
   if os.path.exists(metrics_csv):
     try:
       existing_df = pd.read_csv(metrics_csv)
@@ -285,19 +323,33 @@ def evaluate_model(
   summary_df.to_csv(metrics_csv, index=False)
   print(f"\nUpdated overall metrics table at: {metrics_csv}")
 
-  per_class_csv = os.path.join(output_dir, f"{slug}_per_class_metrics.csv")
-  results["per_class_table"].to_csv(per_class_csv, index=False)
-  print(f"Saved per-class metrics to: {per_class_csv}")
+  # Save detailed per-class metrics in tables directory and root results directory
+  per_class_table_csv = os.path.join(tables_dir, f"{slug}_per_class_metrics.csv")
+  results["per_class_table"].to_csv(per_class_table_csv, index=False)
+  print(f"Saved per-class metrics to: {per_class_table_csv}")
 
-  cm_csv = os.path.join(output_dir, f"{slug}_confusion_matrix.csv")
-  cm_df.to_csv(cm_csv)
-  print(f"Saved confusion matrix CSV to: {cm_csv}")
+  per_class_root_csv = os.path.join(results_dir, "per_class_metrics.csv")
+  results["per_class_table"].to_csv(per_class_root_csv, index=False)
 
-  cm_png = os.path.join(output_dir, f"{slug}_confusion_matrix.png")
+  # Save confusion matrix CSV in tables directory and root results directory
+  cm_table_csv = os.path.join(tables_dir, f"{slug}_confusion_matrix.csv")
+  cm_df.to_csv(cm_table_csv)
+  print(f"Saved confusion matrix CSV to: {cm_table_csv}")
+
+  cm_root_csv = os.path.join(results_dir, "confusion_matrix.csv")
+  cm_df.to_csv(cm_root_csv)
+
+  # Save confusion matrix figure in figures directory and root results directory
+  cm_fig_png = os.path.join(figures_dir, f"{slug}_confusion_matrix.png")
   plot_confusion_matrix(
-    cm, CLASS_NAMES, cm_png, title=f"Confusion Matrix - {model_tag}"
+    cm, CLASS_NAMES, cm_fig_png, title=f"Confusion Matrix - {model_tag}"
   )
-  print(f"Saved confusion matrix figure to: {cm_png}")
+  print(f"Saved confusion matrix figure to: {cm_fig_png}")
+
+  cm_root_png = os.path.join(results_dir, "confusion_matrix.png")
+  plot_confusion_matrix(
+    cm, CLASS_NAMES, cm_root_png, title=f"Confusion Matrix - {model_tag}"
+  )
 
   return results
 
@@ -317,25 +369,43 @@ def main() -> None:
     "--checkpoint",
     type=str,
     default=None,
-    help="Path to trained model checkpoint.",
+    help="Path to trained model checkpoint (auto-resolved if omitted).",
   )
   parser.add_argument(
     "--data",
     type=str,
-    default="dataset/processed/test.npz",
-    help="Path to held-out test dataset (default: dataset/processed/test.npz).",
+    default=DEFAULT_TEST_PATH,
+    help=f"Path to held-out test dataset (default: {DEFAULT_TEST_PATH}).",
   )
   parser.add_argument(
     "--batch-size",
     type=int,
-    default=64,
-    help="Batch size for inference (default: 64).",
+    default=DEFAULT_BATCH_SIZE,
+    help=f"Batch size for inference (default: {DEFAULT_BATCH_SIZE}).",
   )
   parser.add_argument(
-    "--output-dir",
+    "--results-dir",
     type=str,
-    default="results",
-    help="Directory where metrics and figures are saved (default: results).",
+    default=DEFAULT_RESULTS_DIR,
+    help=f"Root directory where metrics.csv is saved (default: {DEFAULT_RESULTS_DIR}).",
+  )
+  parser.add_argument(
+    "--models-dir",
+    type=str,
+    default=DEFAULT_MODELS_DIR,
+    help=f"Directory containing model checkpoints (default: {DEFAULT_MODELS_DIR}).",
+  )
+  parser.add_argument(
+    "--figures-dir",
+    type=str,
+    default=DEFAULT_FIGURES_DIR,
+    help=f"Directory where figure plots are saved (default: {DEFAULT_FIGURES_DIR}).",
+  )
+  parser.add_argument(
+    "--tables-dir",
+    type=str,
+    default=DEFAULT_TABLES_DIR,
+    help=f"Directory where table CSVs are saved (default: {DEFAULT_TABLES_DIR}).",
   )
   args = parser.parse_args()
 
@@ -344,7 +414,10 @@ def main() -> None:
     checkpoint_path=args.checkpoint,
     data_path=args.data,
     batch_size=args.batch_size,
-    output_dir=args.output_dir,
+    results_dir=args.results_dir,
+    models_dir=args.models_dir,
+    figures_dir=args.figures_dir,
+    tables_dir=args.tables_dir,
   )
 
 

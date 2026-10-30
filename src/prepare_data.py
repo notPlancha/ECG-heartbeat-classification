@@ -273,7 +273,7 @@ def run_pipeline(
   quality_rows = []
   for r in du.ALL_RECORDS:
     rec = du.load_record(r, data_dir=data_dir)
-    sig, lead, idx = du.extract_lead_signal(rec, "MLII")
+    sig, lead, _idx = du.extract_lead_signal(rec, "MLII")
     q = du.assess_signal_quality(sig, fs=fs)
     q["Record"] = r
     q["Lead"] = lead
