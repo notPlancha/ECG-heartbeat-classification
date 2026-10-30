@@ -268,6 +268,18 @@ RESAMPLING_STRATEGIES: tuple[str, ...] = (
   "undersample",
 )
 
+# CNN Architecture & Training Defaults (Analog Devices MAX78002 Baseline)
+DEFAULT_CNN_EPOCHS: int = 20
+DEFAULT_CNN_LR: float = 0.001
+DEFAULT_CNN_OPTIMIZER: str = "adam"
+DEFAULT_CNN_BATCH_SIZE: int = 64
+DEFAULT_CNN_KERNEL_SIZE_1: int = 5
+DEFAULT_CNN_KERNEL_SIZE_2: int = 5
+DEFAULT_CNN_KERNEL_SIZE_3: int = 3
+DEFAULT_CNN_CHANNELS_1: int = 16
+DEFAULT_CNN_CHANNELS_2: int = 32
+DEFAULT_CNN_CHANNELS_3: int = 64
+
 
 def set_seed(seed: int = DEFAULT_RANDOM_STATE) -> None:
   """

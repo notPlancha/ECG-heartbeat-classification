@@ -29,6 +29,9 @@ try:
     CLASS_NAMES,
     DEFAULT_BATCH_SIZE,
     DEFAULT_CLASS_WEIGHT,
+    DEFAULT_CNN_EPOCHS,
+    DEFAULT_CNN_LR,
+    DEFAULT_CNN_OPTIMIZER,
     DEFAULT_EPOCHS,
     DEFAULT_LR,
     DEFAULT_MODELS_DIR,
@@ -50,6 +53,9 @@ except ImportError:
     CLASS_NAMES,
     DEFAULT_BATCH_SIZE,
     DEFAULT_CLASS_WEIGHT,
+    DEFAULT_CNN_EPOCHS,
+    DEFAULT_CNN_LR,
+    DEFAULT_CNN_OPTIMIZER,
     DEFAULT_EPOCHS,
     DEFAULT_LR,
     DEFAULT_MODELS_DIR,
@@ -472,7 +478,7 @@ def train_neural_model(
     print("Class weights: None (unweighted cross-entropy loss)")
   print("-" * 78)
 
-  best_val_f1 = 0.0
+  best_val_f1 = -1.0
   best_val_acc = 0.0
   best_val_metrics: dict[str, Any] = {}
 
@@ -517,7 +523,8 @@ def train_neural_model(
   print(f"Saved checkpoint to: {save_path}")
 
   if os.path.exists(save_path):
-    ckpt = torch.load(save_path, map_location="cpu", weights_only=False)
+    ckpt = torch.load(save_path, map_location=device, weights_only=False)
+    model.load_state_dict(ckpt["model_state_dict"])
     metrics = ckpt["val_metrics"]
     print("\nPer-class Validation Performance:")
     for name, f1, rec, prec in zip(
@@ -571,6 +578,15 @@ def run_training(
   Instantiate model and dispatch to classical or neural pipeline via base class check.
   """
   set_seed(seed)
+
+  slug_check = model_name.lower().replace("_", "").replace("-", "")
+  if slug_check in ("cnn", "conv1d", "conv1dnet"):
+    if epochs == DEFAULT_EPOCHS:
+      epochs = DEFAULT_CNN_EPOCHS
+    if lr == DEFAULT_LR:
+      lr = DEFAULT_CNN_LR
+    if optimizer_name == DEFAULT_OPTIMIZER:
+      optimizer_name = DEFAULT_CNN_OPTIMIZER
 
   model = get_model(
     model_name,

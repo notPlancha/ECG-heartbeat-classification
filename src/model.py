@@ -81,15 +81,27 @@ class NeuralECGModel(BaseECGModel, nn.Module):
 
   @torch.no_grad()
   def predict(self, x: np.ndarray | torch.Tensor) -> np.ndarray:
+    try:
+      device = next(self.parameters()).device
+    except StopIteration:
+      device = torch.device("cpu")
     if isinstance(x, np.ndarray):
-      x = torch.from_numpy(x).float()
+      x = torch.from_numpy(x).float().to(device)
+    elif isinstance(x, torch.Tensor) and x.device != device:
+      x = x.to(device)
     logits = self.forward(x)
     return torch.argmax(logits, dim=-1).cpu().numpy()
 
   @torch.no_grad()
   def predict_proba(self, x: np.ndarray | torch.Tensor) -> np.ndarray:
+    try:
+      device = next(self.parameters()).device
+    except StopIteration:
+      device = torch.device("cpu")
     if isinstance(x, np.ndarray):
-      x = torch.from_numpy(x).float()
+      x = torch.from_numpy(x).float().to(device)
+    elif isinstance(x, torch.Tensor) and x.device != device:
+      x = x.to(device)
     logits = self.forward(x)
     return torch.softmax(logits, dim=-1).cpu().numpy()
 
@@ -222,10 +234,71 @@ class RandomForest(ClassicalECGModel):
     return 0
 
 
+class CNN(NeuralECGModel):
+  """
+  1D Convolutional Neural Network for ECG heartbeat classification.
+
+  Matches the architecture developed in the ml-model branch and adheres
+  to the Analog Devices MAX78002 CNN hardware accelerator constraints:
+    - Layer 1: Conv1D(1, 16, kernel_size=5, padding=2) -> ReLU -> MaxPool1D(2)
+    - Layer 2: Conv1D(16, 32, kernel_size=5, padding=2) -> ReLU -> MaxPool1D(2)
+    - Layer 3: Conv1D(32, 64, kernel_size=3, padding=1) -> ReLU -> MaxPool1D(2)
+    - Classification: Linear(2048, 4) for standard 256-sample window
+  """
+
+  def __init__(
+    self,
+    input_dim: int = WINDOW_SIZE,
+    num_classes: int = NUM_CLASSES,
+    in_channels: int = 1,
+    random_state: int | None = DEFAULT_RANDOM_STATE,
+    **kwargs: Any,
+  ) -> None:
+    if random_state is not None:
+      torch.manual_seed(random_state)
+    super().__init__(input_dim=input_dim, num_classes=num_classes)
+    self.random_state = random_state
+    self.in_channels = in_channels
+
+    self.features = nn.Sequential(
+      nn.Conv1d(in_channels, 16, kernel_size=5, padding=2),
+      nn.ReLU(),
+      nn.MaxPool1d(kernel_size=2),
+      nn.Conv1d(16, 32, kernel_size=5, padding=2),
+      nn.ReLU(),
+      nn.MaxPool1d(kernel_size=2),
+      nn.Conv1d(32, 64, kernel_size=3, padding=1),
+      nn.ReLU(),
+      nn.MaxPool1d(kernel_size=2),
+    )
+
+    reduced_dim = input_dim // 8
+    self.classifier = nn.Linear(64 * reduced_dim, num_classes)
+
+  def forward(self, x: torch.Tensor) -> torch.Tensor:
+    match x.dim():
+      case 1:
+        x = x.unsqueeze(0).unsqueeze(0)
+      case 2:
+        x = x.unsqueeze(1)
+      case 3:
+        pass
+      case _:
+        raise ValueError(f"Expected 1D, 2D, or 3D tensor, got shape {x.shape}")
+
+    feat = self.features(x)
+    flat = torch.flatten(feat, start_dim=1)
+    return self.classifier(flat)
+
+
+# Alias for explicit naming
+Conv1DNet = CNN
+
 # List of available model classes
 MODELS: list[type[BaseECGModel]] = [
   LogisticRegression,
   RandomForest,
+  CNN,
 ]
 
 
@@ -237,15 +310,19 @@ def get_model(name: str, **kwargs: Any) -> BaseECGModel:
   for cls in MODELS:
     if cls.__name__.lower() == normalized:
       return cls(**kwargs)
+    if cls is CNN and normalized in ("conv1d", "conv1dnet", "cnn1d"):
+      return cls(**kwargs)
 
-  valid = [cls.__name__ for cls in MODELS]
+  valid = [cls.__name__ for cls in MODELS] + ["Conv1DNet"]
   raise ValueError(f"Unknown model '{name}'. Available models: {valid}")
 
 
 __all__ = [
+  "CNN",
   "MODELS",
   "BaseECGModel",
   "ClassicalECGModel",
+  "Conv1DNet",
   "LogisticRegression",
   "NeuralECGModel",
   "RandomForest",

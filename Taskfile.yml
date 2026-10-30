@@ -87,6 +87,16 @@ tasks:
     cmds:
       - uv run python src/evaluate.py --model RandomForest --checkpoint results/models/random_forest.joblib --seed 42 {{.CLI_ARGS}}
 
+  train-cnn:
+    desc: 'Train CNN model on preprocessed splits (supports extra CLI_ARGS)'
+    cmds:
+      - uv run python src/train.py --model CNN --epochs 20 --lr 0.001 --optimizer adam --seed 42 {{.CLI_ARGS}}
+
+  evaluate-cnn:
+    desc: 'Evaluate CNN model on held-out test split'
+    cmds:
+      - uv run python src/evaluate.py --model CNN --checkpoint results/models/cnn.pt --seed 42 {{.CLI_ARGS}}
+
   train-run:
     desc: 'Train and automatically evaluate model in isolated run folder (usage: task train-run -- --model RandomForest --resample hybrid)'
     cmds:

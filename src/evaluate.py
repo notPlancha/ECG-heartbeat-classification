@@ -246,10 +246,13 @@ def evaluate_model(
     ):
       checkpoint_path = str(weights[0])
       stem = weights[0].stem.lower()
-      if "random_forest" in stem:
-        model_name = "RandomForest"
-      elif "logistic_regression" in stem:
-        model_name = "LogisticRegression"
+      match stem:
+        case s if "random_forest" in s or "rf" in s:
+          model_name = "RandomForest"
+        case s if "logistic_regression" in s or "lr" in s:
+          model_name = "LogisticRegression"
+        case s if "cnn" in s or "conv" in s:
+          model_name = "CNN"
   elif output_dir is not None:
     results_dir = output_dir
 
