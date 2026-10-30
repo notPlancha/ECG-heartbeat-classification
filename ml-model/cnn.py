@@ -1,3 +1,4 @@
+python
 from data_loader import load_training_data, load_testing_data
 
 import torch
@@ -10,6 +11,18 @@ from sklearn.metrics import classification_report
 from sklearn.utils import resample
 from sklearn.utils.class_weight import compute_class_weight
 
+
+# ============================================================
+# Reproducibility
+# ============================================================
+
+torch.manual_seed(42)
+np.random.seed(42)
+
+
+# ============================================================
+# CNN Model
+# ============================================================
 
 class CNN(nn.Module):
     def __init__(self, num_classes=4):
@@ -32,6 +45,7 @@ class CNN(nn.Module):
         self.classifier = nn.Linear(64 * 32, num_classes)
 
     def forward(self, x):
+
         if x.ndim == 2:
             x = x.unsqueeze(1)
 
@@ -54,15 +68,27 @@ heartbeats_testing, annotations_testing = load_testing_data()
 # ============================================================
 
 heartbeats_training_np = np.asarray(heartbeats_training)
-annotations_training_np = np.asarray(annotations_training)
+annotations_training_np = np.asarray(
+    annotations_training
+).reshape(-1)
 
 
-# ============================================================
-# Calculate class weights from ORIGINAL training distribution
-# ============================================================
-
+# Check that all four classes exist
 num_classes = 4
 class_labels = np.arange(num_classes)
+
+if not np.array_equal(
+    np.unique(annotations_training_np),
+    class_labels
+):
+    raise ValueError(
+        "Training data must contain classes 0, 1, 2 and 3."
+    )
+
+
+# ============================================================
+# Calculate class weights from ORIGINAL distribution
+# ============================================================
 
 class_weights = compute_class_weight(
     class_weight="balanced",
@@ -75,7 +101,7 @@ class_weights = torch.tensor(
     dtype=torch.float32
 )
 
-print("\nClass weights (original training distribution):")
+print("\nClass weights:")
 
 for cls, weight in zip(class_labels, class_weights):
     print(f"Class {cls}: {weight.item():.4f}")
@@ -110,20 +136,14 @@ sampling_strategy = {
 
 
 # ============================================================
-# Undersampling and oversampling
+# Oversampling only
 # ============================================================
 
-# All classes will have the same number of samples.
-target_count = max(sampling_strategy.values())
-
-print(f"\nTarget samples per class: {target_count}")
-
-balanced_heartbeats = []
-balanced_annotations = []
+oversampled_heartbeats = []
+oversampled_annotations = []
 
 for cls in classes:
 
-    # Extract samples belonging to current class
     cls_indices = np.where(
         annotations_training_np == cls
     )[0]
@@ -133,22 +153,14 @@ for cls in classes:
 
     current_count = len(cls_indices)
 
-    if current_count > target_count:
+    target_count = sampling_strategy.get(
+        cls,
+        current_count
+    )
 
-        # Undersample majority class
-        resampled_indices = resample(
-            np.arange(current_count),
-            replace=False,
-            n_samples=target_count,
-            random_state=42
-        )
+    # Oversample only if target exceeds current count
+    if current_count < target_count:
 
-        cls_heartbeats = cls_heartbeats[resampled_indices]
-        cls_annotations = cls_annotations[resampled_indices]
-
-    elif current_count < target_count:
-
-        # Oversample minority classes
         resampled_indices = resample(
             np.arange(current_count),
             replace=True,
@@ -159,25 +171,25 @@ for cls in classes:
         cls_heartbeats = cls_heartbeats[resampled_indices]
         cls_annotations = cls_annotations[resampled_indices]
 
-    balanced_heartbeats.append(cls_heartbeats)
-    balanced_annotations.append(cls_annotations)
+    oversampled_heartbeats.append(cls_heartbeats)
+    oversampled_annotations.append(cls_annotations)
 
 
 # ============================================================
-# Combine balanced classes
+# Combine oversampled classes
 # ============================================================
 
 heartbeats_training_resampled = np.vstack(
-    balanced_heartbeats
+    oversampled_heartbeats
 )
 
 annotations_training_resampled = np.hstack(
-    balanced_annotations
+    oversampled_annotations
 )
 
 
 # ============================================================
-# Shuffle balanced dataset
+# Shuffle dataset
 # ============================================================
 
 shuffle_indices = np.random.RandomState(42).permutation(
@@ -194,10 +206,10 @@ annotations_training_resampled = (
 
 
 # ============================================================
-# Verify class distribution after resampling
+# Verify class distribution
 # ============================================================
 
-print("\nClass distribution after undersampling and oversampling:")
+print("\nClass distribution after oversampling:")
 
 unique, counts = np.unique(
     annotations_training_resampled,
@@ -209,7 +221,7 @@ for cls, count in zip(unique, counts):
 
 
 # ============================================================
-# Convert training data to PyTorch tensors
+# Convert training data to tensors
 # ============================================================
 
 heartbeats_training = torch.tensor(
@@ -242,6 +254,8 @@ if not isinstance(annotations_testing, torch.Tensor):
     )
 else:
     annotations_testing = annotations_testing.long()
+
+annotations_testing = annotations_testing.reshape(-1)
 
 
 # ============================================================
@@ -279,17 +293,26 @@ cnn = CNN(num_classes)
 
 
 # ============================================================
-# Define optimizer and weighted loss function
+# Optimizer and weighted loss function
 # ============================================================
 
-optimizer = torch.optim.SGD(
+optimizer = torch.optim.Adam(
     cnn.parameters(),
     lr=0.001
 )
 
-# Combine resampling with class weighting
+# Class weighting combined with oversampling
 criterion = nn.CrossEntropyLoss(
     weight=class_weights
+)
+
+
+# Learning rate scheduler
+scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
+    optimizer,
+    mode="min",
+    factor=0.5,
+    patience=3
 )
 
 
@@ -301,6 +324,8 @@ epochs = 20
 
 loss_history = []
 accuracy_history = []
+
+best_loss = float("inf")
 
 for epoch in range(epochs):
 
@@ -326,9 +351,22 @@ for epoch in range(epochs):
 
     loss_history.append(average_loss)
 
+    # Update learning rate
+    scheduler.step(average_loss)
+
+    # Save best model based on training loss
+    if average_loss < best_loss:
+
+        best_loss = average_loss
+
+        torch.save(
+            cnn.state_dict(),
+            "best_cnn_model.pth"
+        )
+
 
     # ========================================================
-    # Evaluate model
+    # Evaluate accuracy
     # ========================================================
 
     cnn.eval()
@@ -351,18 +389,33 @@ for epoch in range(epochs):
 
     accuracy_history.append(accuracy)
 
+    current_lr = optimizer.param_groups[0]["lr"]
+
     print(
         f"Epoch: {epoch + 1}. "
         f"Loss: {average_loss:.4f}. "
-        f"Accuracy: {accuracy:.2f}%"
+        f"Accuracy: {accuracy:.2f}%. "
+        f"LR: {current_lr:.6f}"
     )
+
+
+# ============================================================
+# Load best model
+# ============================================================
+
+cnn.load_state_dict(
+    torch.load(
+        "best_cnn_model.pth",
+        weights_only=True
+    )
+)
+
+cnn.eval()
 
 
 # ============================================================
 # Final evaluation
 # ============================================================
-
-cnn.eval()
 
 all_labels = []
 all_predictions = []
