@@ -17,6 +17,7 @@ import numpy as np
 import pandas as pd
 import seaborn as sns
 import torch
+from pyhere import here
 from sklearn.metrics import (
   accuracy_score,
   classification_report,
@@ -26,7 +27,7 @@ from sklearn.metrics import (
 from torch import nn
 from torch.utils.data import DataLoader
 
-PROJECT_ROOT = Path(__file__).resolve().parent.parent
+PROJECT_ROOT = here()
 if str(PROJECT_ROOT) not in sys.path:
   sys.path.insert(0, str(PROJECT_ROOT))
 
@@ -134,12 +135,15 @@ def compute_evaluation_metrics(
 def plot_confusion_matrix(
   cm: np.ndarray,
   class_names: list[str],
-  save_path: str,
+  save_path: str | Path,
   title: str = "Confusion Matrix",
 ) -> None:
   """
   Save confusion matrix heatmap as an image.
   """
+  save_p = Path(save_path)
+  save_p.parent.mkdir(parents=True, exist_ok=True)
+
   fig, ax = plt.subplots(figsize=(6, 5))
   sns.heatmap(
     cm,
@@ -154,8 +158,7 @@ def plot_confusion_matrix(
   ax.set_ylabel("True label")
   ax.set_title(title)
   plt.tight_layout()
-  os.makedirs(os.path.dirname(save_path), exist_ok=True)
-  plt.savefig(save_path, dpi=300)
+  plt.savefig(str(save_p), dpi=300)
   plt.close(fig)
 
 
@@ -188,14 +191,15 @@ def run_inference(
   return y_true, y_pred
 
 
-def load_checkpoint(model: NeuralECGModel, checkpoint_path: str) -> None:
+def load_checkpoint(model: NeuralECGModel, checkpoint_path: str | Path) -> None:
   """
   Load weights into neural model from a checkpoint dictionary or state dict.
   """
-  if not os.path.exists(checkpoint_path):
+  cp = Path(checkpoint_path)
+  if not cp.exists():
     raise FileNotFoundError(f"Checkpoint '{checkpoint_path}' not found.")
 
-  ckpt = torch.load(checkpoint_path, map_location="cpu", weights_only=False)
+  ckpt = torch.load(str(cp), map_location="cpu", weights_only=False)
   match ckpt:
     case {"model_state_dict": state_dict}:
       model.load_state_dict(state_dict)
@@ -207,14 +211,14 @@ def load_checkpoint(model: NeuralECGModel, checkpoint_path: str) -> None:
 
 def evaluate_model(
   model_name: str = "LogisticRegression",
-  checkpoint_path: str | None = None,
-  data_path: str = DEFAULT_TEST_PATH,
+  checkpoint_path: str | Path | None = None,
+  data_path: str | Path = DEFAULT_TEST_PATH,
   batch_size: int = DEFAULT_BATCH_SIZE,
-  results_dir: str = DEFAULT_RESULTS_DIR,
-  models_dir: str = DEFAULT_MODELS_DIR,
-  figures_dir: str = DEFAULT_FIGURES_DIR,
-  tables_dir: str = DEFAULT_TABLES_DIR,
-  output_dir: str | None = None,
+  results_dir: str | Path = DEFAULT_RESULTS_DIR,
+  models_dir: str | Path = DEFAULT_MODELS_DIR,
+  figures_dir: str | Path = DEFAULT_FIGURES_DIR,
+  tables_dir: str | Path = DEFAULT_TABLES_DIR,
+  output_dir: str | Path | None = None,
 ) -> dict[str, object]:
   """
   Full evaluation flow: load data, restore model, compute metrics, and export artifacts.
@@ -222,11 +226,15 @@ def evaluate_model(
   if output_dir is not None:
     results_dir = output_dir
 
+  data_p = Path(data_path) if Path(data_path).exists() else here(data_path)
+  if not data_p.exists():
+    raise FileNotFoundError(f"Test data file not found: {data_path}")
+
   device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
   print(f"Device: {device}")
-  print(f"Loading test split from {data_path}...")
+  print(f"Loading test split from {data_p}...")
 
-  test_ds = ECGDataset.from_npz(data_path, augment=False)
+  test_ds = ECGDataset.from_npz(data_p, augment=False)
   test_loader = get_data_loader(
     test_ds,
     batch_size=batch_size,
@@ -243,15 +251,37 @@ def evaluate_model(
   if checkpoint_path is None:
     match model:
       case ClassicalECGModel():
-        cand_models = os.path.join(models_dir, f"{slug}.joblib")
-        cand_results = os.path.join(results_dir, f"{slug}.joblib")
-        checkpoint_path = cand_models if os.path.exists(cand_models) else cand_results
+        cand1 = Path(models_dir) / f"{slug}.joblib"
+        cand_here = here("results", "models", f"{slug}.joblib")
+        cand2 = Path(results_dir) / f"{slug}.joblib"
+        if cand1.exists():
+          checkpoint_path = str(cand1)
+        elif cand_here.exists():
+          checkpoint_path = str(cand_here)
+        elif cand2.exists():
+          checkpoint_path = str(cand2)
+        else:
+          checkpoint_path = str(cand_here)
       case NeuralECGModel():
-        cand_models = os.path.join(models_dir, f"{slug}.pt")
-        cand_results = os.path.join(results_dir, f"{slug}.pt")
-        checkpoint_path = cand_models if os.path.exists(cand_models) else cand_results
+        cand1 = Path(models_dir) / f"{slug}.pt"
+        cand_here = here("results", "models", f"{slug}.pt")
+        cand2 = Path(results_dir) / f"{slug}.pt"
+        if cand1.exists():
+          checkpoint_path = str(cand1)
+        elif cand_here.exists():
+          checkpoint_path = str(cand_here)
+        elif cand2.exists():
+          checkpoint_path = str(cand2)
+        else:
+          checkpoint_path = str(cand_here)
       case _:
         raise TypeError(f"Unsupported model type: {type(model)}")
+  else:
+    cp = Path(checkpoint_path)
+    if not cp.exists() and here(checkpoint_path).exists():
+      checkpoint_path = str(here(checkpoint_path))
+    else:
+      checkpoint_path = str(cp)
 
   if not os.path.exists(checkpoint_path):
     raise FileNotFoundError(
@@ -295,9 +325,14 @@ def evaluate_model(
   cm_df = pd.DataFrame(cm, index=CLASS_NAMES, columns=CLASS_NAMES)
   print(cm_df)
 
-  os.makedirs(results_dir, exist_ok=True)
-  os.makedirs(figures_dir, exist_ok=True)
-  os.makedirs(tables_dir, exist_ok=True)
+  res_p = Path(results_dir) if Path(results_dir).is_absolute() else here(results_dir)
+  fig_p = Path(figures_dir) if Path(figures_dir).is_absolute() else here(figures_dir)
+  tbl_p = Path(tables_dir) if Path(tables_dir).is_absolute() else here(tables_dir)
+
+  res_p.mkdir(parents=True, exist_ok=True)
+  fig_p.mkdir(parents=True, exist_ok=True)
+  tbl_p.mkdir(parents=True, exist_ok=True)
+
   model_tag = type(model).__name__
 
   row_data = {
@@ -309,8 +344,8 @@ def evaluate_model(
     "Macro_Precision": results["macro_precision"],
   }
 
-  metrics_csv = os.path.join(results_dir, "metrics.csv")
-  if os.path.exists(metrics_csv):
+  metrics_csv = res_p / "metrics.csv"
+  if metrics_csv.exists():
     try:
       existing_df = pd.read_csv(metrics_csv)
       existing_df = existing_df[existing_df["Model"] != model_tag]
@@ -324,29 +359,29 @@ def evaluate_model(
   print(f"\nUpdated overall metrics table at: {metrics_csv}")
 
   # Save detailed per-class metrics in tables directory and root results directory
-  per_class_table_csv = os.path.join(tables_dir, f"{slug}_per_class_metrics.csv")
+  per_class_table_csv = tbl_p / f"{slug}_per_class_metrics.csv"
   results["per_class_table"].to_csv(per_class_table_csv, index=False)
   print(f"Saved per-class metrics to: {per_class_table_csv}")
 
-  per_class_root_csv = os.path.join(results_dir, "per_class_metrics.csv")
+  per_class_root_csv = res_p / "per_class_metrics.csv"
   results["per_class_table"].to_csv(per_class_root_csv, index=False)
 
   # Save confusion matrix CSV in tables directory and root results directory
-  cm_table_csv = os.path.join(tables_dir, f"{slug}_confusion_matrix.csv")
+  cm_table_csv = tbl_p / f"{slug}_confusion_matrix.csv"
   cm_df.to_csv(cm_table_csv)
   print(f"Saved confusion matrix CSV to: {cm_table_csv}")
 
-  cm_root_csv = os.path.join(results_dir, "confusion_matrix.csv")
+  cm_root_csv = res_p / "confusion_matrix.csv"
   cm_df.to_csv(cm_root_csv)
 
   # Save confusion matrix figure in figures directory and root results directory
-  cm_fig_png = os.path.join(figures_dir, f"{slug}_confusion_matrix.png")
+  cm_fig_png = fig_p / f"{slug}_confusion_matrix.png"
   plot_confusion_matrix(
     cm, CLASS_NAMES, cm_fig_png, title=f"Confusion Matrix - {model_tag}"
   )
   print(f"Saved confusion matrix figure to: {cm_fig_png}")
 
-  cm_root_png = os.path.join(results_dir, "confusion_matrix.png")
+  cm_root_png = res_p / "confusion_matrix.png"
   plot_confusion_matrix(
     cm, CLASS_NAMES, cm_root_png, title=f"Confusion Matrix - {model_tag}"
   )

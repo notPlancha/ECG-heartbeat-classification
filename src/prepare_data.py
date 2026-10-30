@@ -21,13 +21,15 @@ import json
 import os
 import sys
 from collections import Counter
+from pathlib import Path
 
 import numpy as np
 import pandas as pd
+from pyhere import here
 from tqdm import tqdm
 
 # Import utilities from src
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, str(here("src")))
 import data_understanding as du
 
 
@@ -49,90 +51,83 @@ def process_record_list(
   """
   Process a list of records: filter, segment beats, normalize, and collect arrays.
   """
-  all_windows = []
+  all_beats = []
   all_labels = []
-  all_record_ids = []
   all_r_peaks = []
   all_symbols = []
-  total_exclusions: Counter = Counter()
+  all_records = []
+  class_counter: Counter = Counter()
   per_record_stats = []
 
-  for r in tqdm(records, desc="Processing records", leave=False):
-    # 1. Load record
-    rec_data = du.load_record(r, data_dir=data_dir)
+  window_size = pre_r + post_r
 
-    # 2. Extract preferred lead (e.g. MLII)
-    lead_signal, actual_lead, channel_idx = du.extract_lead_signal(
-      rec_data, preferred_lead=preferred_lead
+  for r in tqdm(records, desc="Processing records"):
+    rec = du.load_record(r, data_dir=data_dir)
+    sig, lead, _ = du.extract_lead_signal(rec, preferred_lead=preferred_lead)
+    filtered = du.bandpass_filter(
+      sig, lowcut=lowcut, highcut=highcut, fs=fs, order=filter_order
     )
+    ann = du.load_annotation(r, data_dir=data_dir)
 
-    # 3. Apply zero-phase bandpass filter
-    filtered_sig = du.butter_bandpass_filter(
-      lead_signal,
-      lowcut=lowcut,
-      highcut=highcut,
-      fs=fs,
-      order=filter_order,
-    )
-
-    # 4. Segment heartbeats
-    windows, labels, symbols, r_peaks, ex = du.segment_heartbeats(
-      signal=filtered_sig,
-      ann_indices=rec_data.ann_indices,
-      ann_symbols=rec_data.ann_symbols,
-      record_name=r,
+    beats, labels, r_peaks, symbols = du.segment_beats(
+      filtered,
+      ann,
       pre_r=pre_r,
       post_r=post_r,
       normalize=normalize,
       clip_range=clip_range,
     )
 
-    total_exclusions += ex
-
-    # Per-record class breakdown
     rec_counts = Counter(labels)
     per_record_stats.append(
       {
         "Record": r,
-        "Lead": actual_lead,
-        "Channel_Index": channel_idx,
-        "N": rec_counts.get(du.CLASS_TO_IDX["N"], 0),
-        "S": rec_counts.get(du.CLASS_TO_IDX["S"], 0),
-        "V": rec_counts.get(du.CLASS_TO_IDX["V"], 0),
-        "F": rec_counts.get(du.CLASS_TO_IDX["F"], 0),
+        "Lead": lead,
         "Total_Beats": len(labels),
-        "Excluded_Count": sum(ex.values()),
+        "N": rec_counts.get(0, 0),
+        "S": rec_counts.get(1, 0),
+        "V": rec_counts.get(2, 0),
+        "F": rec_counts.get(3, 0),
       }
     )
 
-    if len(windows) > 0:
-      all_windows.append(windows)
-      all_labels.append(labels)
-      all_record_ids.extend([r] * len(labels))
-      all_r_peaks.append(r_peaks)
-      all_symbols.extend(symbols)
+    for b, lb, rp, sym in zip(beats, labels, r_peaks, symbols, strict=False):
+      all_beats.append(b)
+      all_labels.append(lb)
+      all_r_peaks.append(rp)
+      all_symbols.append(sym)
+      all_records.append(r)
+      class_counter[du.IDX_TO_CLASS[lb]] += 1
 
-  if len(all_windows) > 0:
-    X = np.concatenate(all_windows, axis=0)
-    # Reshape to (N, 1, L) for 1D CNN / MAX78002 accelerator convention
-    X = np.expand_dims(X, axis=1)
-    y = np.concatenate(all_labels, axis=0)
-    r_peaks_arr = np.concatenate(all_r_peaks, axis=0)
-    rec_ids_arr = np.array(all_record_ids, dtype=object)
+  if all_beats:
+    X = np.stack(all_beats, axis=0).astype(np.float32)
+    # Ensure channel dimension: (N, 1, window_size)
+    if X.ndim == 2:
+      X = np.expand_dims(X, axis=1)
+    y = np.array(all_labels, dtype=np.int64)
+    r_peaks_arr = np.array(all_r_peaks, dtype=np.int64)
+    symbols_arr = np.array(all_symbols)
   else:
-    window_size = pre_r + post_r
     X = np.empty((0, 1, window_size), dtype=np.float32)
     y = np.empty((0,), dtype=np.int64)
     r_peaks_arr = np.empty((0,), dtype=np.int64)
-    rec_ids_arr = np.empty((0,), dtype=object)
+    symbols_arr = np.empty((0,), dtype=str)
 
-  return X, y, rec_ids_arr, r_peaks_arr, all_symbols, total_exclusions, per_record_stats
+  return (
+    X,
+    y,
+    r_peaks_arr,
+    symbols_arr,
+    all_records,
+    class_counter,
+    per_record_stats,
+  )
 
 
 def run_pipeline(
   data_dir: str = du.DEFAULT_DATA_DIR,
-  output_dir: str = "dataset/processed",
-  results_dir: str = "results",
+  output_dir: str = du.DEFAULT_PROCESSED_DIR,
+  results_dir: str = du.DEFAULT_RESULTS_DIR,
   pre_r: int = 90,
   post_r: int = 166,
   lowcut: float = 0.5,
@@ -145,15 +140,21 @@ def run_pipeline(
   """
   Run the end-to-end dataset preparation pipeline.
   """
-  os.makedirs(output_dir, exist_ok=True)
-  os.makedirs(results_dir, exist_ok=True)
+  data_dir = du.resolve_data_dir(data_dir)
+  output_p = Path(output_dir) if Path(output_dir).is_absolute() else here(output_dir)
+  results_p = (
+    Path(results_dir) if Path(results_dir).is_absolute() else here(results_dir)
+  )
+
+  output_p.mkdir(parents=True, exist_ok=True)
+  results_p.mkdir(parents=True, exist_ok=True)
 
   print("=" * 70)
   print("ECG HEARTBEAT CLASSIFICATION — DATA PREPARATION PIPELINE")
   print("=" * 70)
   print(f"Dataset directory : {data_dir}")
-  print(f"Output directory  : {output_dir}")
-  print(f"Results directory : {results_dir}")
+  print(f"Output directory  : {output_p}")
+  print(f"Results directory : {results_p}")
   print(
     f"Window size       : {pre_r + post_r} samples (Pre: {pre_r}, Post: {post_r}) @ {fs} Hz"
   )
@@ -171,9 +172,9 @@ def run_pipeline(
   all_per_record_stats = []
 
   for split_name, rec_list in splits.items():
-    print(f"\nProcessing '{split_name}' split ({len(rec_list)} records)...")
-    X, y, rec_ids, r_peaks, symbols, exclusions, per_rec = process_record_list(
-      records=rec_list,
+    print(f"\nProcessing {split_name.upper()} split ({len(rec_list)} records)...")
+    X, y, r_peaks, symbols, recs, class_cnt, per_rec = process_record_list(
+      rec_list,
       data_dir=data_dir,
       pre_r=pre_r,
       post_r=post_r,
@@ -183,65 +184,62 @@ def run_pipeline(
       filter_order=filter_order,
       normalize=True,
       clip_range=(clip_min, clip_max),
-      preferred_lead="MLII",
+      preferred_lead=du.PREFERRED_LEAD,
     )
 
-    for p in per_rec:
-      p["Split"] = split_name
-      all_per_record_stats.append(p)
+    all_per_record_stats.extend(per_rec)
 
-    # Save compressed NPZ file
-    save_path = os.path.join(output_dir, f"{split_name}.npz")
+    # Save to compressed .npz
+    save_path = output_p / f"{split_name}.npz"
     np.savez_compressed(
       save_path,
       X=X,
       y=y,
-      records=rec_ids,
       r_peaks=r_peaks,
-      symbols=np.array(symbols, dtype=object),
+      symbols=symbols,
+      records=np.array(recs),
     )
-    print(f"  -> Saved {save_path} (X: {X.shape}, y: {y.shape})")
+    file_size_mb = os.path.getsize(save_path) / (1024 * 1024)
+    print(f"Saved {save_path} ({file_size_mb:.2f} MB)")
+    print(f"  Shape: X={X.shape}, y={y.shape}")
+    print(f"  Counts: {dict(class_cnt)}")
 
-    # Class counts
-    cnts = Counter(y)
     split_results[split_name] = {
       "records": rec_list,
-      "total_samples": len(y),
-      "N": int(cnts.get(0, 0)),
-      "S": int(cnts.get(1, 0)),
-      "V": int(cnts.get(2, 0)),
-      "F": int(cnts.get(3, 0)),
-      "exclusions": dict(exclusions),
+      "num_records": len(rec_list),
+      "total_beats": len(y),
+      "class_distribution": dict(class_cnt),
+      "shape_X": list(X.shape),
+      "shape_y": list(y.shape),
+      "file_path": str(save_path),
+      "file_size_mb": round(file_size_mb, 2),
     }
 
-  # Summary table across splits (CRISP-DM Section 3.8 Table)
-  summary_rows = []
+  # Build official Section 3.8 Table
+  rows = []
   for split_name in ["train", "val", "test"]:
     res = split_results[split_name]
-    summary_rows.append(
+    counts = res["class_distribution"]
+    rows.append(
       {
         "Split": split_name.capitalize(),
-        "Record Count": len(res["records"]),
-        "Records": ", ".join(res["records"]),
-        "N": res["N"],
-        "S": res["S"],
-        "V": res["V"],
-        "F": res["F"],
-        "Total": res["total_samples"],
+        "Records": res["num_records"],
+        "N (Normal)": counts.get("N", 0),
+        "S (Supraventricular)": counts.get("S", 0),
+        "V (Ventricular)": counts.get("V", 0),
+        "F (Fusion)": counts.get("F", 0),
+        "Total": res["total_beats"],
       }
     )
 
-  summary_df = pd.DataFrame(summary_rows)
-
-  # Add total row
+  summary_df = pd.DataFrame(rows)
   total_row = {
     "Split": "Total",
-    "Record Count": summary_df["Record Count"].sum(),
-    "Records": "All 44 DS1+DS2 records",
-    "N": summary_df["N"].sum(),
-    "S": summary_df["S"].sum(),
-    "V": summary_df["V"].sum(),
-    "F": summary_df["F"].sum(),
+    "Records": summary_df["Records"].sum(),
+    "N (Normal)": summary_df["N (Normal)"].sum(),
+    "S (Supraventricular)": summary_df["S (Supraventricular)"].sum(),
+    "V (Ventricular)": summary_df["V (Ventricular)"].sum(),
+    "F (Fusion)": summary_df["F (Fusion)"].sum(),
     "Total": summary_df["Total"].sum(),
   }
   summary_df = pd.concat([summary_df, pd.DataFrame([total_row])], ignore_index=True)
@@ -253,18 +251,18 @@ def run_pipeline(
   print("=" * 70)
 
   # Save summary tables to results
-  summary_csv_path = os.path.join(results_dir, "dataset_statistics.csv")
+  summary_csv_path = results_p / "dataset_statistics.csv"
   summary_df.to_csv(summary_csv_path, index=False)
   print(f"\nSaved dataset summary to: {summary_csv_path}")
 
-  stats_json_path = os.path.join(results_dir, "dataset_statistics.json")
+  stats_json_path = results_p / "dataset_statistics.json"
   with open(stats_json_path, "w", encoding="utf-8") as f:
     json.dump(split_results, f, indent=2)
   print(f"Saved detailed JSON statistics to: {stats_json_path}")
 
   # Per-record breakdown
   per_rec_df = pd.DataFrame(all_per_record_stats)
-  per_rec_csv_path = os.path.join(results_dir, "per_record_distribution.csv")
+  per_rec_csv_path = results_p / "per_record_distribution.csv"
   per_rec_df.to_csv(per_rec_csv_path, index=False)
   print(f"Saved per-record distribution to: {per_rec_csv_path}")
 
@@ -280,12 +278,11 @@ def run_pipeline(
     quality_rows.append(q)
 
   quality_df = pd.DataFrame(quality_rows)
-  # Reorder columns
   cols = ["Record", "Lead"] + [
     c for c in quality_df.columns if c not in ["Record", "Lead"]
   ]
   quality_df = quality_df[cols]
-  quality_csv_path = os.path.join(results_dir, "data_quality_report.csv")
+  quality_csv_path = results_p / "data_quality_report.csv"
   quality_df.to_csv(quality_csv_path, index=False)
   print(f"Saved data quality report to: {quality_csv_path}")
 
@@ -306,13 +303,13 @@ if __name__ == "__main__":
   parser.add_argument(
     "--output-dir",
     type=str,
-    default="dataset/processed",
+    default=du.DEFAULT_PROCESSED_DIR,
     help="Path to save processed .npz files",
   )
   parser.add_argument(
     "--results-dir",
     type=str,
-    default="results",
+    default=du.DEFAULT_RESULTS_DIR,
     help="Path to save output metrics and tables",
   )
   parser.add_argument(

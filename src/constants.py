@@ -8,8 +8,9 @@ Decoupled from CRISP-DM phase-specific modules (e.g., data_understanding,
 prepare_data) to provide a single, clean source of truth across the project.
 """
 
-import os
 from pathlib import Path
+
+from pyhere import here
 
 # ==============================================================================
 # Standard Dataset Partitioning Constants (AAMI / de Chazal et al., 2004)
@@ -160,20 +161,19 @@ PREFERRED_LEAD: str = "MLII"
 
 
 # ==============================================================================
-# Dataset Directory Resolution
+# Dataset Directory Resolution (Anchored via pyhere)
 # ==============================================================================
 
-DEFAULT_DATA_DIR: str = os.path.join("dataset", "mit-bih-arrhythmia-database-1.0.0")
+DEFAULT_DATA_DIR: str = str(here("dataset", "mit-bih-arrhythmia-database-1.0.0"))
 
 
 def resolve_data_dir(data_dir: str | None = None, search_depth: int = 2) -> str:
   """
   Resolve the MIT-BIH dataset directory path.
 
-  Searches for an existing directory containing MIT-BIH header files (*.hea).
-  Inspects candidate root directories and recursively checks subdirectories up
-  to `search_depth` levels deep (default: 2). Works whether invoked from the
-  workspace root, src/, notebooks/, or other subdirectories.
+  Searches for an existing directory containing MIT-BIH header files (*.hea)
+  using pyhere to anchor paths to the project root regardless of the caller's
+  working directory.
 
   Parameters
   ----------
@@ -187,57 +187,29 @@ def resolve_data_dir(data_dir: str | None = None, search_depth: int = 2) -> str:
   str
       Resolved path to directory containing MIT-BIH records.
   """
-  # 1. If an explicit path was given and exists, check if valid
   if data_dir is not None:
     p = Path(data_dir)
     if p.exists() and p.is_dir() and any(p.glob("*.hea")):
       return str(p)
-    # Also check relative to parent (e.g. from notebooks/)
-    p_rel = Path("..") / data_dir
-    if p_rel.exists() and p_rel.is_dir() and any(p_rel.glob("*.hea")):
-      return str(p_rel)
+    p_here = here(data_dir)
+    if p_here.exists() and p_here.is_dir() and any(p_here.glob("*.hea")):
+      return str(p_here)
 
-  # 2. Candidate dataset root folders to search from
-  cwd = Path.cwd()
-  repo_root = Path(__file__).resolve().parent.parent
-
-  base_candidates = [
-    cwd / "dataset",
-    cwd.parent / "dataset",
-    repo_root / "dataset",
+  candidates = [
+    here("dataset", "mit-bih-arrhythmia-database-1.0.0"),
+    here("dataset"),
+    Path.cwd() / "dataset",
   ]
 
-  # Deduplicate while preserving order
-  seen: set[Path] = set()
-  unique_candidates: list[Path] = []
-  for b in base_candidates:
-    resolved = b.resolve()
-    if resolved not in seen:
-      seen.add(resolved)
-      unique_candidates.append(b)
-
-  def _to_rel(target: Path) -> str:
-    try:
-      return os.path.relpath(str(target), str(cwd))
-    except ValueError:
-      return str(target)
-
-  # 3. Recursively search candidates up to search_depth
-  for base in unique_candidates:
+  for base in candidates:
     if not base.exists() or not base.is_dir():
       continue
-
-    # Level 0: base itself
     if any(base.glob("*.hea")):
-      return _to_rel(base)
-
-    # Level 1: base/*
+      return str(base)
     level1_dirs = [p for p in base.iterdir() if p.is_dir()]
     for p1 in level1_dirs:
       if any(p1.glob("*.hea")):
-        return _to_rel(p1)
-
-    # Level 2: base/*/*
+        return str(p1)
     if search_depth >= 2:
       for p1 in level1_dirs:
         try:
@@ -246,31 +218,28 @@ def resolve_data_dir(data_dir: str | None = None, search_depth: int = 2) -> str:
           continue
         for p2 in level2_dirs:
           if any(p2.glob("*.hea")):
-            return _to_rel(p2)
+            return str(p2)
 
-    # Fallback: deeper search if nothing found up to search_depth
-    deeper_match = next(base.rglob("*.hea"), None)
-    if deeper_match is not None:
-      return _to_rel(deeper_match.parent)
+    deeper = next(base.rglob("*.hea"), None)
+    if deeper is not None:
+      return str(deeper.parent)
 
-  # 4. Fallback to default path relative to cwd where possible
-  default_path = repo_root / DEFAULT_DATA_DIR
-  return _to_rel(default_path)
+  return str(here("dataset", "mit-bih-arrhythmia-database-1.0.0"))
 
 
 # ==============================================================================
-# Pipeline Directory & File Path Defaults
+# Pipeline Directory & File Path Defaults (Anchored via pyhere)
 # ==============================================================================
 
-DEFAULT_PROCESSED_DIR: str = os.path.join("dataset", "processed")
-DEFAULT_TRAIN_PATH: str = os.path.join(DEFAULT_PROCESSED_DIR, "train.npz")
-DEFAULT_VAL_PATH: str = os.path.join(DEFAULT_PROCESSED_DIR, "val.npz")
-DEFAULT_TEST_PATH: str = os.path.join(DEFAULT_PROCESSED_DIR, "test.npz")
+DEFAULT_PROCESSED_DIR: str = str(here("dataset", "processed"))
+DEFAULT_TRAIN_PATH: str = str(here("dataset", "processed", "train.npz"))
+DEFAULT_VAL_PATH: str = str(here("dataset", "processed", "val.npz"))
+DEFAULT_TEST_PATH: str = str(here("dataset", "processed", "test.npz"))
 
-DEFAULT_RESULTS_DIR: str = "results"
-DEFAULT_MODELS_DIR: str = os.path.join(DEFAULT_RESULTS_DIR, "models")
-DEFAULT_FIGURES_DIR: str = os.path.join(DEFAULT_RESULTS_DIR, "figures")
-DEFAULT_TABLES_DIR: str = os.path.join(DEFAULT_RESULTS_DIR, "tables")
+DEFAULT_RESULTS_DIR: str = str(here("results"))
+DEFAULT_MODELS_DIR: str = str(here("results", "models"))
+DEFAULT_FIGURES_DIR: str = str(here("results", "figures"))
+DEFAULT_TABLES_DIR: str = str(here("results", "tables"))
 
 
 # ==============================================================================

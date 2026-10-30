@@ -19,8 +19,10 @@ Course: ECG Heartbeat Classification on Edge-AI
 
 from collections import Counter
 from collections.abc import Callable
+from pathlib import Path
 
 import numpy as np
+from pyhere import here
 
 # Try importing torch; if not present, graceful fallback to pure NumPy
 try:
@@ -175,12 +177,17 @@ class ECGDataset(Dataset):
   @classmethod
   def from_npz(
     cls,
-    npz_path: str,
+    npz_path: str | Path,
     augment: bool = False,
     to_torch: bool = True,
   ) -> ECGDataset:
     """Load an ECGDataset directly from a saved .npz file."""
-    data = np.load(npz_path, allow_pickle=True)
+    path = Path(npz_path)
+    if not path.exists():
+      here_path = here(npz_path)
+      if here_path.exists():
+        path = here_path
+    data = np.load(path, allow_pickle=True)
     return cls(
       X=data["X"],
       y=data["y"],

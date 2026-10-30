@@ -15,11 +15,12 @@ from typing import Any
 import joblib
 import numpy as np
 import torch
+from pyhere import here
 from sklearn.metrics import accuracy_score, precision_recall_fscore_support
 from torch import nn
 from torch.utils.data import DataLoader
 
-PROJECT_ROOT = Path(__file__).resolve().parent.parent
+PROJECT_ROOT = here()
 if str(PROJECT_ROOT) not in sys.path:
   sys.path.insert(0, str(PROJECT_ROOT))
 
@@ -47,7 +48,6 @@ except ImportError:
     DEFAULT_CLASS_WEIGHT,
     DEFAULT_EPOCHS,
     DEFAULT_LR,
-    DEFAULT_MODELS_DIR,
     DEFAULT_OPTIMIZER,
     DEFAULT_RANDOM_STATE,
     DEFAULT_RF_MAX_DEPTH,
@@ -162,19 +162,22 @@ def load_data(
   """
   Load preprocessed .npz datasets and return train/val loaders with class weights.
   """
-  if not os.path.exists(train_path):
+  train_p = Path(train_path) if Path(train_path).exists() else here(train_path)
+  val_p = Path(val_path) if Path(val_path).exists() else here(val_path)
+
+  if not train_p.exists():
     raise FileNotFoundError(
       f"Training file '{train_path}' not found. "
       "Run 'uv run python src/prepare_data.py' first."
     )
-  if not os.path.exists(val_path):
+  if not val_p.exists():
     raise FileNotFoundError(
       f"Validation file '{val_path}' not found. "
       "Run 'uv run python src/prepare_data.py' first."
     )
 
-  train_ds = ECGDataset.from_npz(train_path, augment=augment)
-  val_ds = ECGDataset.from_npz(val_path, augment=False)
+  train_ds = ECGDataset.from_npz(train_p, augment=augment)
+  val_ds = ECGDataset.from_npz(val_p, augment=False)
 
   if quick_test:
     train_ds.X = train_ds.X[:1000]
@@ -291,18 +294,23 @@ def train_classical_model(
   """
   Train any classical (non-neural) model adhering to ClassicalECGModel.
   """
-  if not os.path.exists(train_path):
+  train_p = Path(train_path) if Path(train_path).exists() else here(train_path)
+  val_p = Path(val_path) if Path(val_path).exists() else here(val_path)
+
+  if not train_p.exists():
     raise FileNotFoundError(f"Training file '{train_path}' not found.")
-  if not os.path.exists(val_path):
+  if not val_p.exists():
     raise FileNotFoundError(f"Validation file '{val_path}' not found.")
 
   slug = to_snake_case(type(model).__name__)
   if save_path is None:
-    save_path = os.path.join(DEFAULT_MODELS_DIR, f"{slug}.joblib")
+    save_path = str(Path(DEFAULT_MODELS_DIR) / f"{slug}.joblib")
+  elif not Path(save_path).is_absolute() and not Path(save_path).parent.exists():
+    save_path = str(here(save_path))
 
-  print(f"Loading training split from {train_path}...")
-  train_ds = ECGDataset.from_npz(train_path, augment=False)
-  val_ds = ECGDataset.from_npz(val_path, augment=False)
+  print(f"Loading training split from {train_p}...")
+  train_ds = ECGDataset.from_npz(train_p, augment=False)
+  val_ds = ECGDataset.from_npz(val_p, augment=False)
 
   X_train = train_ds.X
   y_train = train_ds.y
@@ -358,13 +366,16 @@ def train_neural_model(
   quick_test: bool = False,
   class_weight: str | None = DEFAULT_CLASS_WEIGHT,
   save_path: str | None = None,
+  random_state: int = DEFAULT_RANDOM_STATE,
 ) -> None:
   """
   Train any neural network adhering to NeuralECGModel.
   """
   slug = to_snake_case(type(model).__name__)
   if save_path is None:
-    save_path = os.path.join(DEFAULT_MODELS_DIR, f"{slug}.pt")
+    save_path = str(Path(DEFAULT_MODELS_DIR) / f"{slug}.pt")
+  elif not Path(save_path).is_absolute() and not Path(save_path).parent.exists():
+    save_path = str(here(save_path))
 
   device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
   print(f"Using device: {device}")
@@ -495,7 +506,7 @@ def run_training(
   match model:
     case ClassicalECGModel():
       if save_path is None:
-        save_path = os.path.join(DEFAULT_MODELS_DIR, f"{slug}.joblib")
+        save_path = str(Path(DEFAULT_MODELS_DIR) / f"{slug}.joblib")
       train_classical_model(
         model=model,
         train_path=train_path,
@@ -505,7 +516,7 @@ def run_training(
       )
     case NeuralECGModel():
       if save_path is None:
-        save_path = os.path.join(DEFAULT_MODELS_DIR, f"{slug}.pt")
+        save_path = str(Path(DEFAULT_MODELS_DIR) / f"{slug}.pt")
       train_neural_model(
         model=model,
         train_path=train_path,
@@ -519,6 +530,7 @@ def run_training(
         quick_test=quick_test,
         class_weight=class_weight,
         save_path=save_path,
+        random_state=random_state,
       )
     case _:
       raise TypeError(
