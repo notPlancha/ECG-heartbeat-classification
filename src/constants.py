@@ -237,9 +237,9 @@ DEFAULT_VAL_PATH: str = str(here("dataset", "processed", "val.npz"))
 DEFAULT_TEST_PATH: str = str(here("dataset", "processed", "test.npz"))
 
 DEFAULT_RESULTS_DIR: str = str(here("results"))
-DEFAULT_MODELS_DIR: str = str(here("results", "models"))
-DEFAULT_FIGURES_DIR: str = str(here("results", "figures"))
-DEFAULT_TABLES_DIR: str = str(here("results", "tables"))
+DEFAULT_MODELS_DIR: str = DEFAULT_RESULTS_DIR
+DEFAULT_FIGURES_DIR: str = DEFAULT_RESULTS_DIR
+DEFAULT_TABLES_DIR: str = DEFAULT_RESULTS_DIR
 DEFAULT_RUNS_DIR: str = str(here("results", "runs"))
 
 

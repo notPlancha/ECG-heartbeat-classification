@@ -134,6 +134,8 @@ def resolve_run_dir(
 
   clean = run_arg.strip()
   match clean.lower():
+    case "none" | "off" | "false" | "no":
+      return None
     case "auto" | "new" | "next":
       _, run_p = get_next_run_dir(base_dir=base_dir, prefix=prefix)
       return run_p

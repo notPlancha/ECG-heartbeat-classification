@@ -39,9 +39,9 @@ try:
     DEFAULT_OPTIMIZER,
     DEFAULT_RANDOM_STATE,
     DEFAULT_RESAMPLING_STRATEGY,
+    DEFAULT_RESULTS_DIR,
     DEFAULT_RF_MAX_DEPTH,
     DEFAULT_RF_N_ESTIMATORS,
-    DEFAULT_TABLES_DIR,
     DEFAULT_TEST_PATH,
     DEFAULT_TRAIN_PATH,
     DEFAULT_VAL_PATH,
@@ -64,9 +64,9 @@ except ImportError:
     DEFAULT_OPTIMIZER,
     DEFAULT_RANDOM_STATE,
     DEFAULT_RESAMPLING_STRATEGY,
+    DEFAULT_RESULTS_DIR,
     DEFAULT_RF_MAX_DEPTH,
     DEFAULT_RF_N_ESTIMATORS,
-    DEFAULT_TABLES_DIR,
     DEFAULT_TEST_PATH,
     DEFAULT_TRAIN_PATH,
     DEFAULT_VAL_PATH,
@@ -447,7 +447,7 @@ def train_neural_model(
     if "runs" in str(parent_dir):
       history_path = str(parent_dir / "training_history.csv")
     else:
-      history_path = str(Path(DEFAULT_TABLES_DIR) / f"{slug}_training_history.csv")
+      history_path = str(Path(DEFAULT_RESULTS_DIR) / f"{slug}_training_history.csv")
   elif not Path(history_path).is_absolute() and not Path(history_path).parent.exists():
     history_path = str(here(history_path))
 
@@ -852,10 +852,10 @@ def main() -> None:
     "--run",
     nargs="?",
     const="auto",
-    default=None,
+    default="auto",
     help=(
       "Save experiment outputs to an isolated run folder (e.g. --run or --run run1). "
-      "Automatically increments (run1, run2, ...) if 'auto' or omitted."
+      "Defaults to 'auto' (run1, run2, ...). Pass '--run none' to disable."
     ),
   )
   parser.add_argument(

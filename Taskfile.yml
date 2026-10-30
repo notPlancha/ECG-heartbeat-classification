@@ -67,45 +67,62 @@ tasks:
       - task: run-task2
       - task: run-task3
 
-  train-baseline:
-    desc: 'Train LogisticRegression baseline model on preprocessed splits (supports extra CLI_ARGS)'
+  train:
+    desc: 'Train CNN model in a new isolated run with evaluation (usage: task train -- [extra args])'
     cmds:
-      - uv run python src/train.py --model LogisticRegression --epochs 15 --seed 42 {{.CLI_ARGS}}
+      - uv run python src/train.py --model CNN --epochs 20 --lr 0.001 --optimizer adam --run --eval {{.CLI_ARGS}}
+
+  train-baseline:
+    desc: 'Train LogisticRegression in a new isolated run with evaluation'
+    cmds:
+      - uv run python src/train.py --model LogisticRegression --epochs 15 --seed 42 --run --eval {{.CLI_ARGS}}
 
   evaluate-baseline:
-    desc: 'Evaluate LogisticRegression baseline model on held-out test split'
+    desc: 'Evaluate LogisticRegression (latest run by default, or specify --run runN)'
     cmds:
-      - uv run python src/evaluate.py --model LogisticRegression --checkpoint results/models/logistic_regression.pt --seed 42 {{.CLI_ARGS}}
+      - uv run python src/evaluate.py --model LogisticRegression --run latest {{.CLI_ARGS}}
 
   train-rf:
-    desc: 'Train RandomForest baseline model on preprocessed splits (supports extra CLI_ARGS)'
+    desc: 'Train RandomForest in a new isolated run with evaluation'
     cmds:
-      - uv run python src/train.py --model RandomForest --seed 42 {{.CLI_ARGS}}
+      - uv run python src/train.py --model RandomForest --seed 42 --run --eval {{.CLI_ARGS}}
 
   evaluate-rf:
-    desc: 'Evaluate RandomForest baseline model on held-out test split'
+    desc: 'Evaluate RandomForest (latest run by default, or specify --run runN)'
     cmds:
-      - uv run python src/evaluate.py --model RandomForest --checkpoint results/models/random_forest.joblib --seed 42 {{.CLI_ARGS}}
+      - uv run python src/evaluate.py --model RandomForest --run latest {{.CLI_ARGS}}
 
   train-cnn:
-    desc: 'Train CNN model on preprocessed splits (supports extra CLI_ARGS)'
+    desc: 'Train CNN model in a new isolated run with evaluation'
     cmds:
-      - uv run python src/train.py --model CNN --epochs 20 --lr 0.001 --optimizer adam --seed 42 {{.CLI_ARGS}}
+      - uv run python src/train.py --model CNN --epochs 20 --lr 0.001 --optimizer adam --seed 42 --run --eval {{.CLI_ARGS}}
 
   evaluate-cnn:
-    desc: 'Evaluate CNN model on held-out test split'
+    desc: 'Evaluate CNN model (latest run by default, or specify --run runN)'
     cmds:
-      - uv run python src/evaluate.py --model CNN --checkpoint results/models/cnn.pt --seed 42 {{.CLI_ARGS}}
+      - uv run python src/evaluate.py --model CNN --run latest {{.CLI_ARGS}}
 
   train-run:
     desc: 'Train and automatically evaluate model in isolated run folder (usage: task train-run -- --model RandomForest --resample hybrid)'
     cmds:
       - uv run python src/train.py --run --eval {{.CLI_ARGS}}
 
-  evaluate-run:
-    desc: 'Evaluate isolated run folder (usage: task evaluate-run -- [--run run1])'
+  evaluate:
+    desc: 'Evaluate latest isolated run on held-out test split (DS2)'
+    aliases: [evaluate-run]
     cmds:
-      - uv run python src/evaluate.py --run {{.CLI_ARGS}}
+      - uv run python src/evaluate.py --run latest {{.CLI_ARGS}}
+
+  purge:
+    desc: 'Purge model checkpoints (usage: task purge), or purge all runs and outputs (usage: task purge -- all)'
+    cmds:
+      - powershell -NoProfile -Command "if ('{{.CLI_ARGS}}' -match 'all') { Write-Host 'Purging all runs and result outputs (preserving .gitkeep)...'; if (Test-Path results/runs) { Get-ChildItem results/runs -Recurse -File -Exclude .gitkeep | Remove-Item -Force -ErrorAction SilentlyContinue; Get-ChildItem results/runs -Directory | Remove-Item -Recurse -Force -ErrorAction SilentlyContinue; if (-not (Test-Path results/runs/.gitkeep)) { New-Item -ItemType File -Force -Path results/runs/.gitkeep | Out-Null } }; Get-ChildItem results -File -Include *.pt,*.joblib,confusion_matrix.png,confusion_matrix.csv,metrics.csv,per_class_metrics.csv,*_training_history.csv -ErrorAction SilentlyContinue | Remove-Item -Force -ErrorAction SilentlyContinue; Write-Host 'All runs and result outputs purged successfully.' } else { Write-Host 'Purging model checkpoint files (*.pt, *.joblib)...'; Get-ChildItem results -Recurse -Include *.pt,*.joblib -ErrorAction SilentlyContinue | Remove-Item -Force -ErrorAction SilentlyContinue; Write-Host 'Model checkpoints purged successfully.' }"
+
+  purge-all:
+    desc: 'Purge all runs and result outputs (alias for: task purge -- all)'
+    cmds:
+      - task: purge
+        vars: { CLI_ARGS: 'all' }
 
   lint:
     desc: Lint code with ruff

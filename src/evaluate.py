@@ -35,11 +35,9 @@ try:
   from src.constants import (
     CLASS_NAMES,
     DEFAULT_BATCH_SIZE,
-    DEFAULT_FIGURES_DIR,
     DEFAULT_MODELS_DIR,
     DEFAULT_RANDOM_STATE,
     DEFAULT_RESULTS_DIR,
-    DEFAULT_TABLES_DIR,
     DEFAULT_TEST_PATH,
     NUM_CLASSES,
     WINDOW_SIZE,
@@ -49,11 +47,9 @@ except ImportError:
   from constants import (
     CLASS_NAMES,
     DEFAULT_BATCH_SIZE,
-    DEFAULT_FIGURES_DIR,
     DEFAULT_MODELS_DIR,
     DEFAULT_RANDOM_STATE,
     DEFAULT_RESULTS_DIR,
-    DEFAULT_TABLES_DIR,
     DEFAULT_TEST_PATH,
     NUM_CLASSES,
     WINDOW_SIZE,
@@ -220,9 +216,6 @@ def evaluate_model(
   data_path: str | Path = DEFAULT_TEST_PATH,
   batch_size: int = DEFAULT_BATCH_SIZE,
   results_dir: str | Path = DEFAULT_RESULTS_DIR,
-  models_dir: str | Path = DEFAULT_MODELS_DIR,
-  figures_dir: str | Path = DEFAULT_FIGURES_DIR,
-  tables_dir: str | Path = DEFAULT_TABLES_DIR,
   output_dir: str | Path | None = None,
   run: str | None = None,
   seed: int = DEFAULT_RANDOM_STATE,
@@ -233,12 +226,30 @@ def evaluate_model(
   set_seed(seed)
 
   run_dir = resolve_run_dir(run, must_exist=True) if run else None
+  if run_dir is None and checkpoint_path is None:
+    runs_dir = here("results", "runs")
+    if runs_dir.exists() and any(
+      p.is_dir() and p.name.startswith("run") for p in runs_dir.iterdir()
+    ):
+      run_dir = resolve_run_dir("latest", must_exist=True)
+
   if run_dir is not None:
     results_dir = run_dir
-    models_dir = run_dir
-    figures_dir = run_dir
-    tables_dir = run_dir
-    print(f"Isolated experiment run evaluation: {run_dir.name} ({run_dir})")
+    print("=" * 78)
+    print(f"EVALUATING EXPERIMENT RUN: {run_dir.name}")
+    print(f"Run Directory: {run_dir.resolve()}")
+    print("=" * 78)
+
+    settings_file = run_dir / "settings.txt"
+    if settings_file.exists():
+      raw_settings = settings_file.read_text(encoding="utf-8")
+      if "[Held-out Test Evaluation" in raw_settings:
+        config_text = raw_settings.split("[Held-out Test Evaluation")[0].strip()
+        print(config_text)
+      else:
+        print(raw_settings.strip())
+      print("=" * 78)
+
     weights = list(run_dir.glob("*.joblib")) + list(run_dir.glob("*.pt"))
     if weights and (
       checkpoint_path is None
@@ -287,29 +298,17 @@ def evaluate_model(
   if checkpoint_path is None:
     match model:
       case ClassicalECGModel():
-        cand1 = Path(models_dir) / f"{slug}.joblib"
-        cand_here = here("results", "models", f"{slug}.joblib")
-        cand2 = Path(results_dir) / f"{slug}.joblib"
-        if cand1.exists():
-          checkpoint_path = str(cand1)
-        elif cand_here.exists():
-          checkpoint_path = str(cand_here)
-        elif cand2.exists():
-          checkpoint_path = str(cand2)
+        cand = Path(results_dir) / f"{slug}.joblib"
+        if cand.exists():
+          checkpoint_path = str(cand)
         else:
-          checkpoint_path = str(cand_here)
+          checkpoint_path = str(here("results", f"{slug}.joblib"))
       case NeuralECGModel():
-        cand1 = Path(models_dir) / f"{slug}.pt"
-        cand_here = here("results", "models", f"{slug}.pt")
-        cand2 = Path(results_dir) / f"{slug}.pt"
-        if cand1.exists():
-          checkpoint_path = str(cand1)
-        elif cand_here.exists():
-          checkpoint_path = str(cand_here)
-        elif cand2.exists():
-          checkpoint_path = str(cand2)
+        cand = Path(results_dir) / f"{slug}.pt"
+        if cand.exists():
+          checkpoint_path = str(cand)
         else:
-          checkpoint_path = str(cand_here)
+          checkpoint_path = str(here("results", f"{slug}.pt"))
       case _:
         raise TypeError(f"Unsupported model type: {type(model)}")
   else:
@@ -362,12 +361,7 @@ def evaluate_model(
   print(cm_df)
 
   res_p = Path(results_dir) if Path(results_dir).is_absolute() else here(results_dir)
-  fig_p = Path(figures_dir) if Path(figures_dir).is_absolute() else here(figures_dir)
-  tbl_p = Path(tables_dir) if Path(tables_dir).is_absolute() else here(tables_dir)
-
   res_p.mkdir(parents=True, exist_ok=True)
-  fig_p.mkdir(parents=True, exist_ok=True)
-  tbl_p.mkdir(parents=True, exist_ok=True)
 
   model_tag = type(model).__name__
 
@@ -418,24 +412,24 @@ def evaluate_model(
     summary_df.to_csv(metrics_csv, index=False)
     print(f"\nUpdated overall metrics table at: {metrics_csv}")
 
-    # Save detailed per-class metrics in tables directory and root results directory
-    per_class_table_csv = tbl_p / f"{slug}_per_class_metrics.csv"
+    # Save detailed per-class metrics in root results directory
+    per_class_table_csv = res_p / f"{slug}_per_class_metrics.csv"
     results["per_class_table"].to_csv(per_class_table_csv, index=False)
     print(f"Saved per-class metrics to: {per_class_table_csv}")
 
     per_class_root_csv = res_p / "per_class_metrics.csv"
     results["per_class_table"].to_csv(per_class_root_csv, index=False)
 
-    # Save confusion matrix CSV in tables directory and root results directory
-    cm_table_csv = tbl_p / f"{slug}_confusion_matrix.csv"
+    # Save confusion matrix CSV in root results directory
+    cm_table_csv = res_p / f"{slug}_confusion_matrix.csv"
     cm_df.to_csv(cm_table_csv)
     print(f"Saved confusion matrix CSV to: {cm_table_csv}")
 
     cm_root_csv = res_p / "confusion_matrix.csv"
     cm_df.to_csv(cm_root_csv)
 
-    # Save confusion matrix figure in figures directory and root results directory
-    cm_fig_png = fig_p / f"{slug}_confusion_matrix.png"
+    # Save confusion matrix figure in root results directory
+    cm_fig_png = res_p / f"{slug}_confusion_matrix.png"
     plot_confusion_matrix(
       cm, CLASS_NAMES, cm_fig_png, title=f"Confusion Matrix - {model_tag}"
     )
@@ -485,24 +479,6 @@ def main() -> None:
     help=f"Root directory where metrics.csv is saved (default: {DEFAULT_RESULTS_DIR}).",
   )
   parser.add_argument(
-    "--models-dir",
-    type=str,
-    default=DEFAULT_MODELS_DIR,
-    help=f"Directory containing model checkpoints (default: {DEFAULT_MODELS_DIR}).",
-  )
-  parser.add_argument(
-    "--figures-dir",
-    type=str,
-    default=DEFAULT_FIGURES_DIR,
-    help=f"Directory where figure plots are saved (default: {DEFAULT_FIGURES_DIR}).",
-  )
-  parser.add_argument(
-    "--tables-dir",
-    type=str,
-    default=DEFAULT_TABLES_DIR,
-    help=f"Directory where table CSVs are saved (default: {DEFAULT_TABLES_DIR}).",
-  )
-  parser.add_argument(
     "--run",
     nargs="?",
     const="latest",
@@ -526,9 +502,6 @@ def main() -> None:
     data_path=args.data,
     batch_size=args.batch_size,
     results_dir=args.results_dir,
-    models_dir=args.models_dir,
-    figures_dir=args.figures_dir,
-    tables_dir=args.tables_dir,
     run=args.run,
     seed=args.seed,
   )

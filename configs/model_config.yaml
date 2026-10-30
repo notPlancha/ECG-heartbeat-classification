@@ -7,9 +7,9 @@ paths:
   val_data: "dataset/processed/val.npz"
   test_data: "dataset/processed/test.npz"
   results_dir: "results"
-  models_dir: "results/models"
-  figures_dir: "results/figures"
-  tables_dir: "results/tables"
+  models_dir: "results"
+  figures_dir: "results"
+  tables_dir: "results"
 
 training:
   epochs: 15
