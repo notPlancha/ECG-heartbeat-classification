@@ -37,6 +37,7 @@ try:
     DEFAULT_RESAMPLING_STRATEGY,
     DEFAULT_RF_MAX_DEPTH,
     DEFAULT_RF_N_ESTIMATORS,
+    DEFAULT_TEST_PATH,
     DEFAULT_TRAIN_PATH,
     DEFAULT_VAL_PATH,
     NUM_CLASSES,
@@ -57,6 +58,7 @@ except ImportError:
     DEFAULT_RESAMPLING_STRATEGY,
     DEFAULT_RF_MAX_DEPTH,
     DEFAULT_RF_N_ESTIMATORS,
+    DEFAULT_TEST_PATH,
     DEFAULT_TRAIN_PATH,
     DEFAULT_VAL_PATH,
     NUM_CLASSES,
@@ -548,6 +550,7 @@ def run_training(
   model_name: str = "LogisticRegression",
   train_path: str = DEFAULT_TRAIN_PATH,
   val_path: str = DEFAULT_VAL_PATH,
+  test_path: str = DEFAULT_TEST_PATH,
   epochs: int = DEFAULT_EPOCHS,
   lr: float = DEFAULT_LR,
   optimizer_name: str = DEFAULT_OPTIMIZER,
@@ -561,6 +564,7 @@ def run_training(
   class_weight: str | None = DEFAULT_CLASS_WEIGHT,
   resample: str = DEFAULT_RESAMPLING_STRATEGY,
   run: str | None = None,
+  evaluate: bool = False,
   seed: int = DEFAULT_RANDOM_STATE,
 ) -> dict[str, Any]:
   """
@@ -658,6 +662,22 @@ def run_training(
         }
     settings_file = save_run_settings(run_dir, settings)
     print(f"Saved run settings to: {settings_file}")
+
+  if evaluate:
+    from src.evaluate import evaluate_model
+
+    print("-" * 78)
+    print(f"Running automated test evaluation for {model_name} on DS2...")
+    run_target = str(run_dir) if run_dir is not None else None
+    eval_results = evaluate_model(
+      model_name=model_name,
+      checkpoint_path=save_path,
+      data_path=test_path,
+      batch_size=batch_size,
+      run=run_target,
+      seed=seed,
+    )
+    train_result["eval_results"] = eval_results
 
   return train_result
 
@@ -777,6 +797,19 @@ def main() -> None:
     ),
   )
   parser.add_argument(
+    "--eval",
+    "--evaluate",
+    dest="evaluate",
+    action="store_true",
+    help="Automatically evaluate trained model on held-out test split (DS2) after training.",
+  )
+  parser.add_argument(
+    "--test-path",
+    type=str,
+    default=DEFAULT_TEST_PATH,
+    help=f"Path to held-out test .npz file for evaluation (default: {DEFAULT_TEST_PATH}).",
+  )
+  parser.add_argument(
     "--seed",
     "--random-state",
     dest="seed",
@@ -792,6 +825,7 @@ def main() -> None:
     model_name=args.model,
     train_path=args.train_path,
     val_path=args.val_path,
+    test_path=args.test_path,
     epochs=args.epochs,
     lr=args.lr,
     optimizer_name=args.optimizer,
@@ -805,6 +839,7 @@ def main() -> None:
     class_weight=args.class_weight,
     resample=args.resample,
     run=args.run,
+    evaluate=args.evaluate,
     seed=args.seed,
   )
 
