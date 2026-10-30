@@ -5,6 +5,7 @@ from torch.utils.data import TensorDataset, DataLoader
 import torch.nn as nn
 import matplotlib.pyplot as plt
 from sklearn.metrics import classification_report
+from sklearn.utils import resample
 
 class CNN(nn.Module):
     def __init__(self, num_classes=4):
@@ -21,56 +22,83 @@ class CNN(nn.Module):
             nn.MaxPool1d(kernel_size=2),
         )
         self.classifier = nn.Linear(64 * 32, num_classes)
+
     def forward(self, x):
         if x.ndim == 2:
             x = x.unsqueeze(1)
         x = self.features(x)
         x = torch.flatten(x, start_dim=1)
         return self.classifier(x)
+
+
 # Load data
 heartbeats_training, annotations_training = load_training_data()
 heartbeats_testing, annotations_testing = load_testing_data()
-# Convert data to tensors
-heartbeats_training = torch.tensor(heartbeats_training, dtype=torch.float32)
-annotations_training = torch.tensor(annotations_training, dtype=torch.long)
-heartbeats_testing = torch.tensor(heartbeats_testing, dtype=torch.float32)
-annotations_testing = torch.tensor(annotations_testing, dtype=torch.long)
-# Calculate weights using the training labels only
-num_classes = 4
-class_weights = calculate_class_weights(
-    annotations_training,
-    num_classes
-)
-print("Class counts:", torch.bincount(
-    annotations_training, minlength=num_classes
-))
-print("Class weights:", class_weights)
-print("Beat list shape:", heartbeats_training.shape)
-print("Annotation list shape:", annotations_training.shape)
-print("First label:", annotations_training[0].item())
-# Pair heartbeats with their labels
-dataset = TensorDataset(heartbeats_training, annotations_training)
-testingset = TensorDataset(heartbeats_testing, annotations_testing)
-train_loader = DataLoader(
-    dataset,
-    batch_size=64,
-    shuffle=True,
-)
-test_loader = DataLoader(
-    testingset,
-    batch_size=64,
-    shuffle=False,
-)
 
-# Each heartbeat has 256 samples; CNN adds a single input-channel dimension.
+# Convert data to NumPy arrays for resampling
+heartbeats_training_np = heartbeats_training
+annotations_training_np = annotations_training
+
+# Oversample the minority classes
+oversampled_heartbeats = []
+oversampled_annotations = []
+
+# Get unique classes and their counts
+classes, class_counts = np.unique(annotations_training_np, return_counts=True)
+max_count = max(class_counts)  # Target count for oversampling
+
+for cls in classes:
+    # Extract all samples of the current class
+    cls_indices = np.where(annotations_training_np == cls)[0]
+    cls_heartbeats = heartbeats_training_np[cls_indices]
+    cls_annotations = annotations_training_np[cls_indices]
+
+    # Resample the current class to match the maximum count
+    cls_heartbeats_oversampled = resample(
+        cls_heartbeats,
+        replace=True,  # Allow replacement
+        n_samples=max_count,  # Match the maximum class count
+        random_state=42
+    )
+    cls_annotations_oversampled = resample(
+        cls_annotations,
+        replace=True,
+        n_samples=max_count,
+        random_state=42
+    )
+
+    # Append the oversampled data
+    oversampled_heartbeats.append(cls_heartbeats_oversampled)
+    oversampled_annotations.append(cls_annotations_oversampled)
+
+# Combine all oversampled classes
+heartbeats_training_resampled = np.vstack(oversampled_heartbeats)
+annotations_training_resampled = np.hstack(oversampled_annotations)
+
+# Convert back to tensors
+heartbeats_training = torch.tensor(heartbeats_training_resampled, dtype=torch.float32)
+annotations_training = torch.tensor(annotations_training_resampled, dtype=torch.long)
+
+# Create DataLoader objects
+train_dataset = TensorDataset(heartbeats_training, annotations_training)
+test_dataset = TensorDataset(heartbeats_testing, annotations_testing)
+
+train_loader = DataLoader(train_dataset, batch_size=64, shuffle=True)
+test_loader = DataLoader(test_dataset, batch_size=64, shuffle=False)
+
+# Define the CNN model
+num_classes = 4
 cnn = CNN(num_classes)
+
+# Define optimizer and loss function
 optimizer = torch.optim.SGD(cnn.parameters(), lr=0.001)
-# Apply the class weights to the training loss
-criterion = nn.CrossEntropyLoss(weight=class_weights)
-epochs = 50
+criterion = nn.CrossEntropyLoss()
+
+# Training loop
+epochs = 20
 loss_history = []
 accuracy_history = []
-# Training loop
+
 for epoch in range(epochs):
     cnn.train()
     total_loss = 0.0
@@ -81,7 +109,7 @@ for epoch in range(epochs):
         batch_loss.backward()
         optimizer.step()
         total_loss += batch_loss.item() * len(labels)
-    average_loss = total_loss / len(dataset)
+    average_loss = total_loss / len(train_dataset)
     loss_history.append(average_loss)
 
     # Evaluate without calculating gradients
@@ -92,7 +120,7 @@ for epoch in range(epochs):
             logits = cnn(heartbeats)
             predicted = logits.argmax(dim=1)
             correct += (predicted == labels).sum().item()
-    accuracy = 100 * correct / len(testingset)
+    accuracy = 100 * correct / len(test_dataset)
     accuracy_history.append(accuracy)
     print(
         f"Epoch: {epoch + 1}. "
@@ -120,6 +148,5 @@ report = classification_report(
     target_names=["N", "S", "V", "F"],  # Replace with your class names
     zero_division=0  # Avoid division by zero warnings
 )
-
 print("\nClassification Report:")
 print(report)
