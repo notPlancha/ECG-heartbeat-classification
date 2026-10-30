@@ -183,14 +183,20 @@ class RandomForest(ClassicalECGModel):
     self.class_weight = class_weight
     self.random_state = random_state
     self.n_jobs = n_jobs
+    rf_class_weight = (
+      None
+      if isinstance(class_weight, str) and class_weight.lower() in ("none", "uniform")
+      else class_weight
+    )
     self.classifier = RandomForestClassifier(
       n_estimators=n_estimators,
       max_depth=max_depth,
       min_samples_leaf=min_samples_leaf,
       max_features=max_features,
-      class_weight=class_weight,
+      class_weight=rf_class_weight,
       random_state=random_state,
       n_jobs=n_jobs,
+      **kwargs,
     )
 
   def fit(

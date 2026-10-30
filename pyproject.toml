@@ -5,6 +5,7 @@ description = "Add your description here"
 readme = "README.md"
 requires-python = ">=3.14"
 dependencies = [
+    "imbalanced-learn>=0.14.2",
     "matplotlib>=3.11.1",
     "nbconvert>=7.17.1",
     "pyhere>=1.0.3",

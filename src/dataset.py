@@ -42,16 +42,20 @@ try:
     CLASS_NAMES,
     CLASS_TO_IDX,
     DEFAULT_RANDOM_STATE,
+    DEFAULT_RESAMPLING_STRATEGY,
     IDX_TO_CLASS,
     NUM_CLASSES,
+    RESAMPLING_STRATEGIES,
   )
 except ImportError:
   from constants import (
     CLASS_NAMES,
     CLASS_TO_IDX,
     DEFAULT_RANDOM_STATE,
+    DEFAULT_RESAMPLING_STRATEGY,
     IDX_TO_CLASS,
     NUM_CLASSES,
+    RESAMPLING_STRATEGIES,
   )
 
 __all__ = [
@@ -59,7 +63,9 @@ __all__ = [
   "CLASS_TO_IDX",
   "IDX_TO_CLASS",
   "NUM_CLASSES",
+  "RESAMPLING_STRATEGIES",
   "ECGDataset",
+  "apply_resampling",
   "get_data_loader",
 ]
 
@@ -318,3 +324,120 @@ def get_data_loader(
     worker_init_fn=worker_init_fn,
     pin_memory=torch.cuda.is_available(),
   )
+
+
+def apply_resampling(
+  X: np.ndarray,
+  y: np.ndarray,
+  strategy: str = DEFAULT_RESAMPLING_STRATEGY,
+  seed: int = DEFAULT_RANDOM_STATE,
+  num_classes: int = NUM_CLASSES,
+) -> tuple[np.ndarray, np.ndarray]:
+  """
+  Resample training heartbeat data to address class imbalance using imblearn.
+
+  Parameters
+  ----------
+  X : np.ndarray
+      Heartbeat array, shape (N, L) or (N, 1, L).
+  y : np.ndarray
+      Class labels, shape (N,).
+  strategy : str
+      Resampling method:
+      - 'none': Keep data unchanged.
+      - 'hybrid': Undersample majority class N to at most 2 * F count,
+        followed by targeted oversampling of S (75%), V (25%), and F (75%)
+        relative to original majority count (based on ml-model branch).
+      - 'oversample': RandomOverSampler balancing all minority classes to majority count.
+      - 'undersample': RandomUnderSampler undersampling class N to at most 2 * F count.
+  seed : int
+      Random seed for deterministic sampling.
+  num_classes : int
+      Total number of distinct classes (default: 4).
+
+  Returns
+  -------
+  tuple[np.ndarray, np.ndarray]
+      Resampled (X_resampled, y_resampled) arrays.
+  """
+  if not strategy or strategy.lower() in ("none", "uniform"):
+    return X, y
+
+  from imblearn.over_sampling import RandomOverSampler
+  from imblearn.under_sampling import RandomUnderSampler
+
+  original_shape = X.shape
+  X_flat = X.reshape(X.shape[0], -1) if X.ndim > 2 else X
+  y_arr = np.asarray(y, dtype=np.int64)
+
+  original_counts = np.bincount(y_arr, minlength=num_classes)
+
+  match strategy.lower():
+    case "hybrid":
+      target_n_cap = (
+        int(original_counts[3] * 2) if original_counts[3] > 0 else original_counts[0]
+      )
+      target_n = min(original_counts[0], max(1, target_n_cap))
+      under_sampler = RandomUnderSampler(
+        sampling_strategy={0: target_n},
+        random_state=seed,
+      )
+      x_under, y_under = under_sampler.fit_resample(X_flat, y_arr)
+      under_counts = np.bincount(y_under, minlength=num_classes)
+
+      majority_count = int(original_counts.max())
+      raw_targets = {
+        1: int(majority_count * 0.75),
+        2: int(majority_count * 0.25),
+        3: int(majority_count * 0.75),
+      }
+      sampling_strategy = {
+        cls: target
+        for cls, target in raw_targets.items()
+        if cls < num_classes and under_counts[cls] < target and under_counts[cls] > 0
+      }
+
+      if sampling_strategy:
+        oversampler = RandomOverSampler(
+          sampling_strategy=sampling_strategy,
+          random_state=seed,
+        )
+        x_resampled, y_resampled = oversampler.fit_resample(x_under, y_under)
+      else:
+        x_resampled, y_resampled = x_under, y_under
+
+    case "oversample":
+      majority_count = int(original_counts.max())
+      sampling_strategy = {
+        cls: majority_count
+        for cls in range(num_classes)
+        if original_counts[cls] < majority_count and original_counts[cls] > 0
+      }
+      if sampling_strategy:
+        oversampler = RandomOverSampler(
+          sampling_strategy=sampling_strategy,
+          random_state=seed,
+        )
+        x_resampled, y_resampled = oversampler.fit_resample(X_flat, y_arr)
+      else:
+        x_resampled, y_resampled = X_flat, y_arr
+
+    case "undersample":
+      target_n_cap = (
+        int(original_counts[3] * 2) if original_counts[3] > 0 else original_counts[0]
+      )
+      target_n = min(original_counts[0], max(1, target_n_cap))
+      under_sampler = RandomUnderSampler(
+        sampling_strategy={0: target_n},
+        random_state=seed,
+      )
+      x_resampled, y_resampled = under_sampler.fit_resample(X_flat, y_arr)
+
+    case _:
+      valid = list(RESAMPLING_STRATEGIES)
+      raise ValueError(f"Unknown resampling strategy '{strategy}'. Choices: {valid}")
+
+  if len(original_shape) > 2:
+    x_resampled = x_resampled.reshape(-1, *original_shape[1:])
+
+  return x_resampled.astype(np.float32), y_resampled.astype(np.int64)

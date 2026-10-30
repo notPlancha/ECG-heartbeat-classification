@@ -68,24 +68,24 @@ tasks:
       - task: run-task3
 
   train-baseline:
-    desc: 'Train LogisticRegression baseline model on preprocessed splits'
+    desc: 'Train LogisticRegression baseline model on preprocessed splits (supports extra CLI_ARGS)'
     cmds:
-      - uv run python src/train.py --model LogisticRegression --epochs 15 --seed 42
+      - uv run python src/train.py --model LogisticRegression --epochs 15 --seed 42 {{.CLI_ARGS}}
 
   evaluate-baseline:
     desc: 'Evaluate LogisticRegression baseline model on held-out test split'
     cmds:
-      - uv run python src/evaluate.py --model LogisticRegression --checkpoint results/models/logistic_regression.pt --seed 42
+      - uv run python src/evaluate.py --model LogisticRegression --checkpoint results/models/logistic_regression.pt --seed 42 {{.CLI_ARGS}}
 
   train-rf:
-    desc: 'Train RandomForest baseline model on preprocessed splits'
+    desc: 'Train RandomForest baseline model on preprocessed splits (supports extra CLI_ARGS)'
     cmds:
-      - uv run python src/train.py --model RandomForest --seed 42
+      - uv run python src/train.py --model RandomForest --seed 42 {{.CLI_ARGS}}
 
   evaluate-rf:
     desc: 'Evaluate RandomForest baseline model on held-out test split'
     cmds:
-      - uv run python src/evaluate.py --model RandomForest --checkpoint results/models/random_forest.joblib --seed 42
+      - uv run python src/evaluate.py --model RandomForest --checkpoint results/models/random_forest.joblib --seed 42 {{.CLI_ARGS}}
 
   lint:
     desc: Lint code with ruff

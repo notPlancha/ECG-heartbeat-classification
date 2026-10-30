@@ -259,6 +259,14 @@ DEFAULT_RF_MAX_DEPTH: int = 20
 DEFAULT_RF_MIN_SAMPLES_LEAF: int = 2
 DEFAULT_RF_MAX_FEATURES: str = "sqrt"
 
+DEFAULT_RESAMPLING_STRATEGY: str = "none"
+RESAMPLING_STRATEGIES: tuple[str, ...] = (
+  "none",
+  "hybrid",
+  "oversample",
+  "undersample",
+)
+
 
 def set_seed(seed: int = DEFAULT_RANDOM_STATE) -> None:
   """

@@ -34,11 +34,13 @@ try:
     DEFAULT_MODELS_DIR,
     DEFAULT_OPTIMIZER,
     DEFAULT_RANDOM_STATE,
+    DEFAULT_RESAMPLING_STRATEGY,
     DEFAULT_RF_MAX_DEPTH,
     DEFAULT_RF_N_ESTIMATORS,
     DEFAULT_TRAIN_PATH,
     DEFAULT_VAL_PATH,
     NUM_CLASSES,
+    RESAMPLING_STRATEGIES,
     WINDOW_SIZE,
     set_seed,
   )
@@ -52,11 +54,13 @@ except ImportError:
     DEFAULT_MODELS_DIR,
     DEFAULT_OPTIMIZER,
     DEFAULT_RANDOM_STATE,
+    DEFAULT_RESAMPLING_STRATEGY,
     DEFAULT_RF_MAX_DEPTH,
     DEFAULT_RF_N_ESTIMATORS,
     DEFAULT_TRAIN_PATH,
     DEFAULT_VAL_PATH,
     NUM_CLASSES,
+    RESAMPLING_STRATEGIES,
     WINDOW_SIZE,
     set_seed,
   )
@@ -68,7 +72,7 @@ def to_snake_case(name: str) -> str:
   return re.sub(r"([a-z0-9])([A-Z])", r"\1_\2", s).lower()
 
 
-from src.dataset import ECGDataset, get_data_loader
+from src.dataset import ECGDataset, apply_resampling, get_data_loader
 from src.model import (
   MODELS,
   ClassicalECGModel,
@@ -161,6 +165,7 @@ def load_data(
   balanced_sampling: bool = False,
   quick_test: bool = False,
   class_weight: str | None = DEFAULT_CLASS_WEIGHT,
+  resample: str = DEFAULT_RESAMPLING_STRATEGY,
   seed: int | None = DEFAULT_RANDOM_STATE,
 ) -> tuple[DataLoader, DataLoader, torch.Tensor | None]:
   """
@@ -188,6 +193,19 @@ def load_data(
     train_ds.y = train_ds.y[:1000]
     val_ds.X = val_ds.X[:500]
     val_ds.y = val_ds.y[:500]
+
+  if resample and resample.lower() != "none":
+    print(f"Applying '{resample}' resampling on training split (seed={seed})...")
+    effective_seed = seed if seed is not None else DEFAULT_RANDOM_STATE
+    x_res, y_res = apply_resampling(
+      train_ds.X, train_ds.y, strategy=resample, seed=effective_seed
+    )
+    train_ds = ECGDataset(
+      X=x_res,
+      y=y_res,
+      augment=augment,
+      seed=seed,
+    )
 
   class_weights_torch, _, _ = resolve_class_weights(train_ds, class_weight)
 
@@ -296,6 +314,7 @@ def train_classical_model(
   val_path: str = DEFAULT_VAL_PATH,
   quick_test: bool = False,
   save_path: str | None = None,
+  resample: str = DEFAULT_RESAMPLING_STRATEGY,
   seed: int = DEFAULT_RANDOM_STATE,
 ) -> None:
   """
@@ -332,8 +351,17 @@ def train_classical_model(
     X_val = X_val[:500]
     y_val = y_val[:500]
 
+  if resample and resample.lower() != "none":
+    print(f"Applying '{resample}' resampling on training split (seed={seed})...")
+    X_train, y_train = apply_resampling(X_train, y_train, strategy=resample, seed=seed)
+    res_counts = np.bincount(y_train, minlength=NUM_CLASSES)
+    print(f"Resampled train samples: {len(X_train)}")
+    print(f"Resampled distribution: {dict(zip(CLASS_NAMES, res_counts, strict=False))}")
+
   print(f"Train samples: {len(X_train)} | Val samples: {len(X_val)}")
-  print(f"Train class distribution: {train_ds.get_class_counts()}")
+  print(
+    f"Train class distribution: {dict(zip(CLASS_NAMES, np.bincount(y_train, minlength=NUM_CLASSES), strict=False))}"
+  )
   print(f"Val class distribution:   {val_ds.get_class_counts()}")
   print(f"Random seed: {seed}")
 
@@ -375,6 +403,7 @@ def train_neural_model(
   balanced_sampling: bool = False,
   quick_test: bool = False,
   class_weight: str | None = DEFAULT_CLASS_WEIGHT,
+  resample: str = DEFAULT_RESAMPLING_STRATEGY,
   save_path: str | None = None,
   seed: int = DEFAULT_RANDOM_STATE,
 ) -> None:
@@ -400,6 +429,7 @@ def train_neural_model(
     balanced_sampling=balanced_sampling,
     quick_test=quick_test,
     class_weight=class_weight,
+    resample=resample,
     seed=seed,
   )
 
@@ -499,6 +529,7 @@ def run_training(
   n_estimators: int = DEFAULT_RF_N_ESTIMATORS,
   max_depth: int | None = DEFAULT_RF_MAX_DEPTH,
   class_weight: str | None = DEFAULT_CLASS_WEIGHT,
+  resample: str = DEFAULT_RESAMPLING_STRATEGY,
   seed: int = DEFAULT_RANDOM_STATE,
 ) -> None:
   """
@@ -527,6 +558,7 @@ def run_training(
         val_path=val_path,
         quick_test=quick_test,
         save_path=save_path,
+        resample=resample,
         seed=seed,
       )
     case NeuralECGModel():
@@ -544,6 +576,7 @@ def run_training(
         balanced_sampling=balanced_sampling,
         quick_test=quick_test,
         class_weight=class_weight,
+        resample=resample,
         save_path=save_path,
         seed=seed,
       )
@@ -646,6 +679,18 @@ def main() -> None:
     ),
   )
   parser.add_argument(
+    "--resample",
+    type=str,
+    choices=list(RESAMPLING_STRATEGIES),
+    default=DEFAULT_RESAMPLING_STRATEGY,
+    help=(
+      "Resampling strategy using imblearn on training split: "
+      "'none' (default), 'hybrid' (undersample N to 2*F + targeted oversampling), "
+      "'oversample' (RandomOverSampler balancing all classes), "
+      "or 'undersample' (RandomUnderSampler on N)."
+    ),
+  )
+  parser.add_argument(
     "--seed",
     "--random-state",
     dest="seed",
@@ -672,6 +717,7 @@ def main() -> None:
     n_estimators=args.n_estimators,
     max_depth=max_depth,
     class_weight=args.class_weight,
+    resample=args.resample,
     seed=args.seed,
   )
 
