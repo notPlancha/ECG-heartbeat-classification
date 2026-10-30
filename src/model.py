@@ -9,10 +9,10 @@ except ImportError:
 
 class LogisticRegression(nn.Module):
   """
-  Multiclass Logistic Regression baseline model for ECG heartbeat classification.
+  Multiclass linear classifier for ECG heartbeat classification.
 
-  Maps a 1D ECG window (default: 256 samples) directly to class logits
-  (default: 4 classes: N, S, V, F) via a single linear transformation.
+  Maps a 1D ECG window directly to class logits:
+      logits = x * W^T + b
   """
 
   def __init__(
@@ -48,7 +48,53 @@ class LogisticRegression(nn.Module):
     return torch.softmax(logits, dim=-1)
 
 
-# Alias for backward compatibility or explicit naming
+# Alias for backward compatibility
 LogisticRegressionBaseline = LogisticRegression
 
-__all__ = ["LogisticRegression", "LogisticRegressionBaseline"]
+# Registry for model lookup by name
+MODEL_REGISTRY: dict[str, type[nn.Module]] = {
+  "logistic_regression": LogisticRegression,
+  "logistic_regression_baseline": LogisticRegression,
+  "baseline": LogisticRegression,
+  "linear": LogisticRegression,
+}
+
+
+def register_model(name: str, model_cls: type[nn.Module]) -> None:
+  """Add a new model class to the registry."""
+  key = name.lower().replace("-", "_")
+  MODEL_REGISTRY[key] = model_cls
+
+
+def list_models() -> list[str]:
+  """Return unique registered model names."""
+  seen = set()
+  result = []
+  for name, cls in MODEL_REGISTRY.items():
+    if cls not in seen:
+      seen.add(cls)
+      result.append(name)
+  return sorted(result)
+
+
+def get_model(name: str, **kwargs) -> nn.Module:
+  """
+  Instantiate a model by name.
+
+  Raises ValueError if the model name is not recognized.
+  """
+  key = name.lower().replace("-", "_")
+  if key not in MODEL_REGISTRY:
+    valid = ", ".join(sorted(MODEL_REGISTRY.keys()))
+    raise ValueError(f"Unknown model '{name}'. Available models: {valid}")
+  return MODEL_REGISTRY[key](**kwargs)
+
+
+__all__ = [
+  "MODEL_REGISTRY",
+  "LogisticRegression",
+  "LogisticRegressionBaseline",
+  "get_model",
+  "list_models",
+  "register_model",
+]
