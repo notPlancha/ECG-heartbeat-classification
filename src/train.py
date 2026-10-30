@@ -10,6 +10,7 @@ import os
 import sys
 from pathlib import Path
 
+import joblib
 import torch
 from sklearn.metrics import accuracy_score, precision_recall_fscore_support
 from torch import nn
@@ -182,6 +183,84 @@ def evaluate(
   return avg_loss, metrics
 
 
+def train_random_forest(
+  train_path: str = "dataset/processed/train.npz",
+  val_path: str = "dataset/processed/val.npz",
+  n_estimators: int = 100,
+  max_depth: int | None = 20,
+  min_samples_leaf: int = 2,
+  class_weight: str | None = "balanced",
+  random_state: int = 42,
+  quick_test: bool = False,
+  save_path: str = "results/random_forest.joblib",
+) -> None:
+  """
+  Train a Random Forest classifier using preprocessed .npz splits.
+  """
+  if not os.path.exists(train_path):
+    raise FileNotFoundError(f"Training file '{train_path}' not found.")
+  if not os.path.exists(val_path):
+    raise FileNotFoundError(f"Validation file '{val_path}' not found.")
+
+  print(f"Loading training split from {train_path}...")
+  train_ds = ECGDataset.from_npz(train_path, augment=False)
+  val_ds = ECGDataset.from_npz(val_path, augment=False)
+
+  X_train = train_ds.X
+  y_train = train_ds.y
+  X_val = val_ds.X
+  y_val = val_ds.y
+
+  if quick_test:
+    X_train = X_train[:1000]
+    y_train = y_train[:1000]
+    X_val = X_val[:500]
+    y_val = y_val[:500]
+
+  print(f"Train samples: {len(X_train)} | Val samples: {len(X_val)}")
+  print(f"Train class distribution: {train_ds.get_class_counts()}")
+  print(f"Val class distribution:   {val_ds.get_class_counts()}")
+
+  weight_param = None if class_weight == "none" else class_weight
+
+  model = get_model(
+    "RandomForest",
+    n_estimators=n_estimators,
+    max_depth=max_depth,
+    min_samples_leaf=min_samples_leaf,
+    class_weight=weight_param,
+    random_state=random_state,
+  )
+
+  print(
+    f"Training Random Forest (n_estimators={n_estimators}, max_depth={max_depth}, "
+    f"class_weight={weight_param})..."
+  )
+  model.fit(X_train, y_train)
+
+  val_preds = model.predict(X_val)
+  val_metrics = compute_metrics(torch.from_numpy(y_val), torch.from_numpy(val_preds))
+
+  print("-" * 78)
+  print(
+    f"Validation Accuracy: {val_metrics['accuracy']:.2f}% | "
+    f"Validation Macro-F1: {val_metrics['macro_f1']:.4f}"
+  )
+  print("Per-class Validation Performance:")
+  for name, f1, rec, prec in zip(
+    CLASS_NAMES,
+    val_metrics["per_class_f1"],
+    val_metrics["per_class_recall"],
+    val_metrics["per_class_precision"],
+    strict=False,
+  ):
+    print(f"  Class {name}: F1={f1:.4f} | Recall={rec:.4f} | Precision={prec:.4f}")
+
+  os.makedirs(os.path.dirname(save_path), exist_ok=True)
+  joblib.dump(model, save_path)
+  print(f"Saved trained Random Forest model to: {save_path}")
+
+
 def run_training(
   model_name: str = "LogisticRegression",
   epochs: int = 15,
@@ -192,10 +271,25 @@ def run_training(
   balanced_sampling: bool = False,
   quick_test: bool = False,
   save_path: str = "results/best_model.pt",
+  n_estimators: int = 100,
+  max_depth: int | None = 20,
+  class_weight: str | None = "balanced",
 ) -> None:
   """
-  Train a model and save the checkpoint with the best validation Macro-F1.
+  Dispatch training to neural or classical pipeline based on model name.
   """
+  if model_name.lower() in ("randomforest", "rf"):
+    if save_path in ("results/best_model.pt", "results/logistic_regression.pt"):
+      save_path = "results/random_forest.joblib"
+    train_random_forest(
+      n_estimators=n_estimators,
+      max_depth=max_depth,
+      class_weight=class_weight,
+      quick_test=quick_test,
+      save_path=save_path,
+    )
+    return
+
   device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
   print(f"Using device: {device}")
 
@@ -294,7 +388,7 @@ def main() -> None:
     "--epochs",
     type=int,
     default=15,
-    help="Number of epochs to train (default: 15).",
+    help="Number of epochs to train (for neural models, default: 15).",
   )
   parser.add_argument(
     "--lr",
@@ -333,10 +427,31 @@ def main() -> None:
   parser.add_argument(
     "--save-path",
     type=str,
-    default="results/logistic_regression.pt",
+    default="results/best_model.pt",
     help="File path to save the best model weights.",
   )
+  parser.add_argument(
+    "--n-estimators",
+    type=int,
+    default=100,
+    help="Number of trees in Random Forest (default: 100).",
+  )
+  parser.add_argument(
+    "--max-depth",
+    type=int,
+    default=20,
+    help="Max tree depth in Random Forest (default: 20, -1 for unconstrained).",
+  )
+  parser.add_argument(
+    "--class-weight",
+    type=str,
+    choices=["balanced", "none"],
+    default="balanced",
+    help="Class weighting mode for Random Forest (default: balanced).",
+  )
   args = parser.parse_args()
+
+  max_depth = None if args.max_depth <= 0 else args.max_depth
 
   run_training(
     model_name=args.model,
@@ -348,6 +463,9 @@ def main() -> None:
     balanced_sampling=args.balanced_sampling,
     quick_test=args.quick_test,
     save_path=args.save_path,
+    n_estimators=args.n_estimators,
+    max_depth=max_depth,
+    class_weight=args.class_weight,
   )
 
 

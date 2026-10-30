@@ -77,6 +77,16 @@ tasks:
     cmds:
       - uv run python src/evaluate.py --model LogisticRegression --checkpoint results/logistic_regression.pt
 
+  train-rf:
+    desc: 'Train RandomForest baseline model on preprocessed splits'
+    cmds:
+      - uv run python src/train.py --model RandomForest
+
+  evaluate-rf:
+    desc: 'Evaluate RandomForest baseline model on held-out test split'
+    cmds:
+      - uv run python src/evaluate.py --model RandomForest --checkpoint results/random_forest.joblib
+
   lint:
     desc: Lint code with ruff
     cmds:

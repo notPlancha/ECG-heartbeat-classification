@@ -9,7 +9,9 @@ import argparse
 import os
 import sys
 from pathlib import Path
+from typing import Any
 
+import joblib
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
@@ -56,7 +58,6 @@ def compute_evaluation_metrics(
 
   cm = confusion_matrix(y_true, y_pred, labels=labels)
 
-  # Calculate per-class specificity: TN / (TN + FP)
   specificities = []
   total_samples = len(y_true)
   for i in range(len(labels)):
@@ -123,22 +124,26 @@ def plot_confusion_matrix(
 
 @torch.no_grad()
 def run_inference(
-  model: BaseECGModel,
+  model: Any,
   loader: DataLoader,
   device: torch.device,
 ) -> tuple[np.ndarray, np.ndarray]:
   """
   Run model inference across a data loader and return predictions and ground truth.
   """
-  model.eval()
+  if hasattr(model, "eval"):
+    model.eval()
   all_preds = []
   all_targets = []
 
   for beats, labels in loader:
-    beats = beats.to(device)
+    if isinstance(model, torch.nn.Module):
+      beats = beats.to(device)
     preds = model.predict(beats)
 
-    all_preds.append(preds.cpu().numpy())
+    if isinstance(preds, torch.Tensor):
+      preds = preds.cpu().numpy()
+    all_preds.append(preds)
     all_targets.append(labels.numpy())
 
   y_pred = np.concatenate(all_preds)
@@ -164,7 +169,7 @@ def load_checkpoint(model: BaseECGModel, checkpoint_path: str) -> None:
 
 def evaluate_model(
   model_name: str = "LogisticRegression",
-  checkpoint_path: str = "results/logistic_regression.pt",
+  checkpoint_path: str | None = None,
   data_path: str = "dataset/processed/test.npz",
   batch_size: int = 64,
   output_dir: str = "results",
@@ -187,18 +192,33 @@ def evaluate_model(
   print(f"Loaded {len(test_ds)} test heartbeats.")
   print(f"Class distribution: {test_ds.get_class_counts()}")
 
-  model = get_model(model_name, input_dim=WINDOW_SIZE, num_classes=NUM_CLASSES)
-  load_checkpoint(model, checkpoint_path)
-  model = model.to(device)
+  if checkpoint_path is None:
+    if model_name.lower() in ("randomforest", "rf"):
+      checkpoint_path = "results/random_forest.joblib"
+    else:
+      checkpoint_path = "results/logistic_regression.pt"
 
-  num_params = sum(p.numel() for p in model.parameters())
-  print(f"Loaded model '{type(model).__name__}' ({num_params} parameters).")
+  if not os.path.exists(checkpoint_path):
+    raise FileNotFoundError(f"Checkpoint file not found: {checkpoint_path}")
+
+  if model_name.lower() in ("randomforest", "rf") or checkpoint_path.endswith(
+    ".joblib"
+  ):
+    print(f"Loading Random Forest model from {checkpoint_path}...")
+    model = joblib.load(checkpoint_path)
+    num_params = model.count_parameters()
+    print(f"Loaded Random Forest ({num_params} total tree nodes).")
+  else:
+    model = get_model(model_name, input_dim=WINDOW_SIZE, num_classes=NUM_CLASSES)
+    load_checkpoint(model, checkpoint_path)
+    model = model.to(device)
+    num_params = sum(p.numel() for p in model.parameters())
+    print(f"Loaded model '{type(model).__name__}' ({num_params} parameters).")
+
   print("Running test set inference...")
-
   y_true, y_pred = run_inference(model, test_loader, device)
   results = compute_evaluation_metrics(y_true, y_pred)
 
-  # Display report table matching project template
   print("\n" + "=" * 65)
   print("5.1 Clean Test Results")
   print("=" * 65)
@@ -218,36 +238,44 @@ def evaluate_model(
   cm_df = pd.DataFrame(cm, index=CLASS_NAMES, columns=CLASS_NAMES)
   print(cm_df)
 
-  # Export CSV and image files
   os.makedirs(output_dir, exist_ok=True)
+  model_tag = type(model).__name__
+  slug = model_tag.lower().replace("-", "_")
+
+  row_data = {
+    "Model": model_tag,
+    "Parameters": num_params,
+    "Accuracy": results["accuracy"],
+    "Macro_F1": results["macro_f1"],
+    "Macro_Recall": results["macro_recall"],
+    "Macro_Precision": results["macro_precision"],
+  }
 
   metrics_csv = os.path.join(output_dir, "metrics.csv")
-  summary_df = pd.DataFrame(
-    [
-      {
-        "Model": type(model).__name__,
-        "Parameters": num_params,
-        "Accuracy": results["accuracy"],
-        "Macro_F1": results["macro_f1"],
-        "Macro_Recall": results["macro_recall"],
-        "Macro_Precision": results["macro_precision"],
-      }
-    ]
-  )
-  summary_df.to_csv(metrics_csv, index=False)
-  print(f"\nSaved overall metrics to: {metrics_csv}")
+  if os.path.exists(metrics_csv):
+    try:
+      existing_df = pd.read_csv(metrics_csv)
+      existing_df = existing_df[existing_df["Model"] != model_tag]
+      summary_df = pd.concat([existing_df, pd.DataFrame([row_data])], ignore_index=True)
+    except pd.errors.EmptyDataError, ValueError, KeyError:
+      summary_df = pd.DataFrame([row_data])
+  else:
+    summary_df = pd.DataFrame([row_data])
 
-  per_class_csv = os.path.join(output_dir, "per_class_metrics.csv")
+  summary_df.to_csv(metrics_csv, index=False)
+  print(f"\nUpdated overall metrics table at: {metrics_csv}")
+
+  per_class_csv = os.path.join(output_dir, f"{slug}_per_class_metrics.csv")
   results["per_class_table"].to_csv(per_class_csv, index=False)
   print(f"Saved per-class metrics to: {per_class_csv}")
 
-  cm_csv = os.path.join(output_dir, "confusion_matrix.csv")
+  cm_csv = os.path.join(output_dir, f"{slug}_confusion_matrix.csv")
   cm_df.to_csv(cm_csv)
-  print(f"Saved confusion matrix to: {cm_csv}")
+  print(f"Saved confusion matrix CSV to: {cm_csv}")
 
-  cm_png = os.path.join(output_dir, "confusion_matrix.png")
+  cm_png = os.path.join(output_dir, f"{slug}_confusion_matrix.png")
   plot_confusion_matrix(
-    cm, CLASS_NAMES, cm_png, title=f"Confusion Matrix - {type(model).__name__}"
+    cm, CLASS_NAMES, cm_png, title=f"Confusion Matrix - {model_tag}"
   )
   print(f"Saved confusion matrix figure to: {cm_png}")
 
@@ -268,8 +296,8 @@ def main() -> None:
   parser.add_argument(
     "--checkpoint",
     type=str,
-    default="results/logistic_regression.pt",
-    help="Path to trained model checkpoint (default: results/logistic_regression.pt).",
+    default=None,
+    help="Path to trained model checkpoint.",
   )
   parser.add_argument(
     "--data",
