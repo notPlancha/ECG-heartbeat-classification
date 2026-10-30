@@ -172,12 +172,13 @@ def load_checkpoint(model: NeuralECGModel, checkpoint_path: str) -> None:
     raise FileNotFoundError(f"Checkpoint '{checkpoint_path}' not found.")
 
   ckpt = torch.load(checkpoint_path, map_location="cpu", weights_only=False)
-  if isinstance(ckpt, dict) and "model_state_dict" in ckpt:
-    model.load_state_dict(ckpt["model_state_dict"])
-  elif isinstance(ckpt, dict):
-    model.load_state_dict(ckpt)
-  else:
-    raise ValueError(f"Unrecognized checkpoint format at '{checkpoint_path}'")
+  match ckpt:
+    case {"model_state_dict": state_dict}:
+      model.load_state_dict(state_dict)
+    case dict():
+      model.load_state_dict(ckpt)
+    case _:
+      raise ValueError(f"Unrecognized checkpoint format at '{checkpoint_path}'")
 
 
 def evaluate_model(
@@ -209,21 +210,27 @@ def evaluate_model(
 
   slug = to_snake_case(type(model).__name__)
   if checkpoint_path is None:
-    if isinstance(model, ClassicalECGModel):
-      checkpoint_path = f"results/{slug}.joblib"
-    else:
-      checkpoint_path = f"results/{slug}.pt"
+    match model:
+      case ClassicalECGModel():
+        checkpoint_path = f"results/{slug}.joblib"
+      case NeuralECGModel():
+        checkpoint_path = f"results/{slug}.pt"
+      case _:
+        raise TypeError(f"Unsupported model type: {type(model)}")
 
   if not os.path.exists(checkpoint_path):
     raise FileNotFoundError(f"Checkpoint file not found: {checkpoint_path}")
 
-  if isinstance(model, ClassicalECGModel):
-    print(f"Loading classical model from {checkpoint_path}...")
-    model = joblib.load(checkpoint_path)
-  elif isinstance(model, NeuralECGModel):
-    print(f"Loading neural model from {checkpoint_path}...")
-    load_checkpoint(model, checkpoint_path)
-    model = model.to(device)
+  match model:
+    case ClassicalECGModel():
+      print(f"Loading classical model from {checkpoint_path}...")
+      model = joblib.load(checkpoint_path)
+    case NeuralECGModel():
+      print(f"Loading neural model from {checkpoint_path}...")
+      load_checkpoint(model, checkpoint_path)
+      model = model.to(device)
+    case _:
+      raise TypeError(f"Unsupported model type: {type(model)}")
 
   num_params = model.count_parameters()
   print(f"Loaded model '{type(model).__name__}' ({num_params} parameters / nodes).")

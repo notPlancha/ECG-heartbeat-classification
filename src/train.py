@@ -90,31 +90,31 @@ def resolve_class_weights(
     rf_param = {i: float(w) for i, w in enumerate(weights_np)}
     return weights_torch, weights_np, rf_param
 
-  mode = strategy_clean.lower()
-  if mode in ("balanced", "inverse"):
-    weights_np = dataset.compute_class_weights("inverse")
-    weights_torch = torch.from_numpy(weights_np).float()
-    return weights_torch, weights_np, "balanced"
-  elif mode == "sqrt_inverse":
-    weights_np = dataset.compute_class_weights("sqrt_inverse")
-    weights_torch = torch.from_numpy(weights_np).float()
-    rf_param = {i: float(w) for i, w in enumerate(weights_np)}
-    return weights_torch, weights_np, rf_param
-  elif mode == "effective":
-    weights_np = dataset.compute_class_weights("effective")
-    weights_torch = torch.from_numpy(weights_np).float()
-    rf_param = {i: float(w) for i, w in enumerate(weights_np)}
-    return weights_torch, weights_np, rf_param
-  elif mode == "balanced_subsample":
-    weights_np = dataset.compute_class_weights("inverse")
-    weights_torch = torch.from_numpy(weights_np).float()
-    return weights_torch, weights_np, "balanced_subsample"
-  else:
-    valid = ["balanced", "inverse", "sqrt_inverse", "effective", "none"]
-    raise ValueError(
-      f"Unknown class weight strategy '{strategy}'. Choices: {valid} "
-      "or comma-separated values (e.g. '1.0,10.0,5.0,20.0')."
-    )
+  match strategy_clean.lower():
+    case "balanced" | "inverse":
+      weights_np = dataset.compute_class_weights("inverse")
+      weights_torch = torch.from_numpy(weights_np).float()
+      return weights_torch, weights_np, "balanced"
+    case "sqrt_inverse":
+      weights_np = dataset.compute_class_weights("sqrt_inverse")
+      weights_torch = torch.from_numpy(weights_np).float()
+      rf_param = {i: float(w) for i, w in enumerate(weights_np)}
+      return weights_torch, weights_np, rf_param
+    case "effective":
+      weights_np = dataset.compute_class_weights("effective")
+      weights_torch = torch.from_numpy(weights_np).float()
+      rf_param = {i: float(w) for i, w in enumerate(weights_np)}
+      return weights_torch, weights_np, rf_param
+    case "balanced_subsample":
+      weights_np = dataset.compute_class_weights("inverse")
+      weights_torch = torch.from_numpy(weights_np).float()
+      return weights_torch, weights_np, "balanced_subsample"
+    case _:
+      valid = ["balanced", "inverse", "sqrt_inverse", "effective", "none"]
+      raise ValueError(
+        f"Unknown class weight strategy '{strategy}'. Choices: {valid} "
+        "or comma-separated values (e.g. '1.0,10.0,5.0,20.0')."
+      )
 
 
 def load_data(
@@ -344,12 +344,13 @@ def train_neural_model(
     class_weights = class_weights.to(device)
   criterion = nn.CrossEntropyLoss(weight=class_weights)
 
-  if optimizer_name.lower() == "adam":
-    optimizer = torch.optim.Adam(model.parameters(), lr=lr)
-  elif optimizer_name.lower() == "sgd":
-    optimizer = torch.optim.SGD(model.parameters(), lr=lr, momentum=0.9)
-  else:
-    raise ValueError(f"Unsupported optimizer: '{optimizer_name}'")
+  match optimizer_name.lower():
+    case "adam":
+      optimizer = torch.optim.Adam(model.parameters(), lr=lr)
+    case "sgd":
+      optimizer = torch.optim.SGD(model.parameters(), lr=lr, momentum=0.9)
+    case _:
+      raise ValueError(f"Unsupported optimizer: '{optimizer_name}'")
 
   param_count = model.count_parameters()
   print(f"Model: {type(model).__name__} ({param_count} parameters)")
@@ -443,33 +444,34 @@ def run_training(
   )
 
   slug = to_snake_case(type(model).__name__)
-  if isinstance(model, ClassicalECGModel):
-    if save_path is None or save_path == "results/best_model.pt":
-      save_path = f"results/{slug}.joblib"
-    train_classical_model(
-      model=model,
-      quick_test=quick_test,
-      save_path=save_path,
-    )
-  elif isinstance(model, NeuralECGModel):
-    if save_path is None or save_path == "results/best_model.pt":
-      save_path = f"results/{slug}.pt"
-    train_neural_model(
-      model=model,
-      epochs=epochs,
-      lr=lr,
-      optimizer_name=optimizer_name,
-      batch_size=batch_size,
-      augment=augment,
-      balanced_sampling=balanced_sampling,
-      quick_test=quick_test,
-      class_weight=class_weight,
-      save_path=save_path,
-    )
-  else:
-    raise TypeError(
-      f"Model '{type(model).__name__}' does not inherit from BaseECGModel."
-    )
+  match model:
+    case ClassicalECGModel():
+      if save_path is None or save_path == "results/best_model.pt":
+        save_path = f"results/{slug}.joblib"
+      train_classical_model(
+        model=model,
+        quick_test=quick_test,
+        save_path=save_path,
+      )
+    case NeuralECGModel():
+      if save_path is None or save_path == "results/best_model.pt":
+        save_path = f"results/{slug}.pt"
+      train_neural_model(
+        model=model,
+        epochs=epochs,
+        lr=lr,
+        optimizer_name=optimizer_name,
+        batch_size=batch_size,
+        augment=augment,
+        balanced_sampling=balanced_sampling,
+        quick_test=quick_test,
+        class_weight=class_weight,
+        save_path=save_path,
+      )
+    case _:
+      raise TypeError(
+        f"Model '{type(model).__name__}' does not inherit from BaseECGModel."
+      )
 
 
 def main() -> None:

@@ -216,19 +216,20 @@ class ECGDataset(Dataset):
     total = len(self.y)
     num_classes = 4
 
-    if method == "inverse":
-      weights = np.zeros(num_classes, dtype=np.float64)
-      for i in range(num_classes):
-        weights[i] = total / (num_classes * counts[i]) if counts[i] > 0 else 0.0
-    elif method == "sqrt_inverse":
-      weights = np.sqrt(total / (num_classes * np.maximum(counts, 1.0)))
-    elif method == "effective":
-      beta = 0.9999
-      effective_num = 1.0 - np.power(beta, counts)
-      weights = (1.0 - beta) / np.maximum(effective_num, 1e-8)
-      weights = weights / np.sum(weights) * num_classes
-    else:
-      raise ValueError(f"Unknown method: {method}")
+    match method:
+      case "inverse":
+        weights = np.zeros(num_classes, dtype=np.float64)
+        for i in range(num_classes):
+          weights[i] = total / (num_classes * counts[i]) if counts[i] > 0 else 0.0
+      case "sqrt_inverse":
+        weights = np.sqrt(total / (num_classes * np.maximum(counts, 1.0)))
+      case "effective":
+        beta = 0.9999
+        effective_num = 1.0 - np.power(beta, counts)
+        weights = (1.0 - beta) / np.maximum(effective_num, 1e-8)
+        weights = weights / np.sum(weights) * num_classes
+      case _:
+        raise ValueError(f"Unknown method: {method}")
 
     return weights.astype(np.float32)
 

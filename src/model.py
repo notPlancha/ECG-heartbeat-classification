@@ -96,11 +96,13 @@ class ClassicalECGModel(BaseECGModel):
     """Flatten or squeeze incoming heartbeat arrays into 2D matrices."""
     if isinstance(x, torch.Tensor):
       x = x.detach().cpu().numpy()
-    if x.ndim == 3 and x.shape[1] == 1:
-      return x.squeeze(1)
-    if x.ndim > 2:
-      return x.reshape(len(x), -1)
-    return x
+    match x.shape:
+      case (n, 1, _):
+        return x.squeeze(1)
+      case (n, *dims) if len(dims) > 1:
+        return x.reshape(n, -1)
+      case _:
+        return x
 
   @abstractmethod
   def fit(
@@ -125,10 +127,11 @@ class LogisticRegression(NeuralECGModel):
     self.linear = nn.Linear(input_dim, num_classes, bias=bias)
 
   def forward(self, x: torch.Tensor) -> torch.Tensor:
-    if x.ndim > 2:
-      x = x.flatten(start_dim=1)
-    elif x.ndim == 1:
-      x = x.unsqueeze(0)
+    match x.dim():
+      case 1:
+        x = x.unsqueeze(0)
+      case d if d > 2:
+        x = x.flatten(start_dim=1)
     return self.linear(x)
 
 
