@@ -26,10 +26,10 @@ ECG-heartbeat-classification/
 ├── README.md                      # Complete project documentation and workflow instructions
 ├── requirements.txt               # Fully resolved, locked Python package dependencies
 ├── pyproject.toml                 # Project metadata and dependencies (managed via uv)
-├── justfile                       # Convenient task automation recipes (install, prepare-data, run-eda)
+├── Taskfile.yml                   # Task automation recipes (install, prepare-data, train, evaluate)
 │
 ├── dataset/
-│   ├── physionet.org/             # Raw MIT-BIH Arrhythmia Database files (.hea, .dat, .atr)
+│   ├── mit-bih-arrhythmia-database-1.0.0/ # Raw MIT-BIH Arrhythmia Database files (.hea, .dat, .atr)
 │   └── processed/                 # Preprocessed, segmented Edge-AI datasets (generated)
 │       ├── train.npz              # Training set: 40,411 beats (17 DS1 records)
 │       ├── val.npz                # Validation set: 10,583 beats (5 DS1 records)
@@ -42,18 +42,23 @@ ECG-heartbeat-classification/
 │   └── play-around.ipynb                   # Scratch notebook for quick tests
 │
 ├── src/
+│   ├── constants.py               # Centralized constants, partitions, and path resolver
 │   ├── data_understanding.py      # Core modular utilities for record loading, filtering, and AAMI mapping
 │   ├── prepare_data.py            # Reproducible preprocessing and dataset segmentation pipeline
 │   ├── dataset.py                 # Flexible NumPy/PyTorch Dataset loader with training augmentations
-│   ├── model.py                   # MAX78002-compatible CNN architecture (for Stage 4)
-│   ├── train.py                   # Model training script (for Stage 4)
-│   ├── evaluate.py                # Performance and confusion matrix evaluation (for Stage 5)
-│   └── noise_test.py              # Noise robustness evaluation at 12dB, 6dB, 0dB (for Stage 5)
+│   ├── model.py                   # BaseECGModel abstract class and model definitions (Stage 4)
+│   ├── train.py                   # Model training and validation pipeline (Stage 4)
+│   ├── evaluate.py                # Performance, confusion matrix, and scikit-learn metrics (Stage 5)
+│   └── noise_test.py              # Noise robustness evaluation at 12dB, 6dB, 0dB (Stage 5)
 │
 ├── configs/
 │   └── preprocessing_config.yaml  # Configurable filter, windowing, and split parameters
 │
 └── results/
+    ├── metrics.csv                # Overall test performance metrics
+    ├── per_class_metrics.csv      # Per-class precision, recall, and F1 metrics
+    ├── confusion_matrix.csv       # Test set confusion matrix table
+    ├── confusion_matrix.png       # Test set confusion matrix visualization
     ├── dataset_statistics.csv     # Summary table of beat counts by split and class
     ├── dataset_statistics.json    # Machine-readable detailed split metrics and exclusions
     ├── per_record_distribution.csv# Per-patient class counts illustrating heterogeneity
@@ -64,28 +69,42 @@ ECG-heartbeat-classification/
 
 ## ⚡ Quick Start
 
-This project uses [`uv`](https://github.com/astral-sh/uv) and [`just`](https://github.com/casey/just) for reproducible environment and task management.
+This project uses [`uv`](https://github.com/astral-sh/uv) and [`Task`](https://taskfile.dev) for reproducible environment and task management.
 
 ### 1. Installation
 ```powershell
-# Install all locked dependencies into the virtual environment
-just install
-# Or via uv:
+# Install dependencies into virtual environment via uv:
 uv sync
 ```
 
 ### 2. Run Data Preprocessing (Stages 2 & 3)
 ```powershell
 # Executes bandpass filtering, beat segmentation, normalization, and splits export
-just prepare-data
+task prepare-data
 # Or via python directly:
 uv run python src/prepare_data.py
 ```
 
-### 3. Run the CRISP-DM Submission 1 Notebooks
+### 3. Train Baseline Model (Stage 4)
 ```powershell
-# Re-execute all three notebooks in place:
-just run-all-notebooks
+# Train LogisticRegression baseline on preprocessed splits:
+task train-baseline
+# Or via python directly:
+uv run python src/train.py --model LogisticRegression --epochs 15
+```
+
+### 4. Evaluate Baseline Model (Stage 5)
+```powershell
+# Evaluate trained baseline on held-out DS2 test split:
+task evaluate-baseline
+# Or via python directly:
+uv run python src/evaluate.py --model LogisticRegression
+```
+
+### 5. Run CRISP-DM Submission 1 Notebooks
+```powershell
+# Re-execute all three notebooks in sequence:
+task run-all-notebooks
 
 # Or execute individual notebooks:
 just run-task1   # Task 1: Business / Application Understanding
