@@ -114,15 +114,14 @@ tasks:
       - uv run python src/evaluate.py --run latest {{.CLI_ARGS}}
 
   purge:
-    desc: 'Purge model checkpoints (usage: task purge), or purge all runs and outputs (usage: task purge -- all)'
+    desc: 'Purge model checkpoints (usage: task purge), or purge all runs (usage: task purge -- all)'
     cmds:
-      - powershell -NoProfile -Command "if ('{{.CLI_ARGS}}' -match 'all') { Write-Host 'Purging all runs and result outputs (preserving .gitkeep)...'; if (Test-Path results/runs) { Get-ChildItem results/runs -Recurse -File -Exclude .gitkeep | Remove-Item -Force -ErrorAction SilentlyContinue; Get-ChildItem results/runs -Directory | Remove-Item -Recurse -Force -ErrorAction SilentlyContinue; if (-not (Test-Path results/runs/.gitkeep)) { New-Item -ItemType File -Force -Path results/runs/.gitkeep | Out-Null } }; Get-ChildItem results -File -Include *.pt,*.joblib,confusion_matrix.png,confusion_matrix.csv,metrics.csv,per_class_metrics.csv,*_training_history.csv -ErrorAction SilentlyContinue | Remove-Item -Force -ErrorAction SilentlyContinue; Write-Host 'All runs and result outputs purged successfully.' } else { Write-Host 'Purging model checkpoint files (*.pt, *.joblib)...'; Get-ChildItem results -Recurse -Include *.pt,*.joblib -ErrorAction SilentlyContinue | Remove-Item -Force -ErrorAction SilentlyContinue; Write-Host 'Model checkpoints purged successfully.' }"
+      - uv run python src/purge.py {{.CLI_ARGS}}
 
   purge-all:
     desc: 'Purge all runs and result outputs (alias for: task purge -- all)'
     cmds:
-      - task: purge
-        vars: { CLI_ARGS: 'all' }
+      - uv run python src/purge.py --all
 
   lint:
     desc: Lint code with ruff
