@@ -14,6 +14,7 @@ from typing import Any
 
 import joblib
 import numpy as np
+import pandas as pd
 import torch
 from pyhere import here
 from sklearn.metrics import accuracy_score, precision_recall_fscore_support
@@ -40,6 +41,7 @@ try:
     DEFAULT_RESAMPLING_STRATEGY,
     DEFAULT_RF_MAX_DEPTH,
     DEFAULT_RF_N_ESTIMATORS,
+    DEFAULT_TABLES_DIR,
     DEFAULT_TEST_PATH,
     DEFAULT_TRAIN_PATH,
     DEFAULT_VAL_PATH,
@@ -64,6 +66,7 @@ except ImportError:
     DEFAULT_RESAMPLING_STRATEGY,
     DEFAULT_RF_MAX_DEPTH,
     DEFAULT_RF_N_ESTIMATORS,
+    DEFAULT_TABLES_DIR,
     DEFAULT_TEST_PATH,
     DEFAULT_TRAIN_PATH,
     DEFAULT_VAL_PATH,
@@ -425,8 +428,9 @@ def train_neural_model(
   class_weight: str | None = DEFAULT_CLASS_WEIGHT,
   resample: str = DEFAULT_RESAMPLING_STRATEGY,
   save_path: str | None = None,
+  history_path: str | None = None,
   seed: int = DEFAULT_RANDOM_STATE,
-) -> None:
+) -> dict[str, Any]:
   """
   Train any neural network adhering to NeuralECGModel.
   """
@@ -437,6 +441,15 @@ def train_neural_model(
     save_path = str(Path(DEFAULT_MODELS_DIR) / f"{slug}.pt")
   elif not Path(save_path).is_absolute() and not Path(save_path).parent.exists():
     save_path = str(here(save_path))
+
+  if history_path is None:
+    parent_dir = Path(save_path).parent
+    if "runs" in str(parent_dir):
+      history_path = str(parent_dir / "training_history.csv")
+    else:
+      history_path = str(Path(DEFAULT_TABLES_DIR) / f"{slug}_training_history.csv")
+  elif not Path(history_path).is_absolute() and not Path(history_path).parent.exists():
+    history_path = str(here(history_path))
 
   device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
   print(f"Using device: {device}")
@@ -481,6 +494,7 @@ def train_neural_model(
   best_val_f1 = -1.0
   best_val_acc = 0.0
   best_val_metrics: dict[str, Any] = {}
+  epoch_history: list[dict[str, Any]] = []
 
   for epoch in range(1, epochs + 1):
     train_loss, train_acc = train_one_epoch(
@@ -490,6 +504,27 @@ def train_neural_model(
 
     val_acc = val_metrics["accuracy"]
     val_f1 = val_metrics["macro_f1"]
+
+    epoch_entry: dict[str, Any] = {
+      "epoch": epoch,
+      "train_loss": float(train_loss),
+      "train_accuracy": float(train_acc),
+      "val_loss": float(val_loss),
+      "val_accuracy": float(val_acc),
+      "val_macro_f1": float(val_f1),
+    }
+    for name, f1, rec, prec in zip(
+      CLASS_NAMES,
+      val_metrics["per_class_f1"],
+      val_metrics["per_class_recall"],
+      val_metrics["per_class_precision"],
+      strict=False,
+    ):
+      epoch_entry[f"val_f1_{name}"] = float(f1)
+      epoch_entry[f"val_recall_{name}"] = float(rec)
+      epoch_entry[f"val_precision_{name}"] = float(prec)
+
+    epoch_history.append(epoch_entry)
 
     print(
       f"Epoch {epoch:2d}/{epochs:2d} | "
@@ -522,6 +557,12 @@ def train_neural_model(
   )
   print(f"Saved checkpoint to: {save_path}")
 
+  # Save full epoch metrics history to CSV
+  history_df = pd.DataFrame(epoch_history)
+  os.makedirs(os.path.dirname(history_path), exist_ok=True)
+  history_df.to_csv(history_path, index=False)
+  print(f"Saved epoch metrics history to: {history_path}")
+
   if os.path.exists(save_path):
     ckpt = torch.load(save_path, map_location=device, weights_only=False)
     model.load_state_dict(ckpt["model_state_dict"])
@@ -550,6 +591,8 @@ def train_neural_model(
       if hasattr(val_loader.dataset, "get_class_counts")
       else {}
     ),
+    "epoch_history": epoch_history,
+    "history_path": history_path,
   }
 
 
@@ -661,6 +704,8 @@ def run_training(
       "val_samples": train_result.get("val_samples"),
       "val_distribution": train_result.get("val_distribution"),
       "val_metrics": train_result.get("val_metrics"),
+      "epoch_history": train_result.get("epoch_history"),
+      "history_path": train_result.get("history_path"),
     }
     match model:
       case ClassicalECGModel():

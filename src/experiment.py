@@ -262,6 +262,27 @@ def save_run_settings(
         + str([round(x, 4) for x in vm["per_class_precision"]])
       )
 
+  if settings.get("epoch_history"):
+    lines.extend(
+      [
+        "",
+        "[Epoch Training History]",
+      ]
+    )
+    if settings.get("history_path"):
+      lines.append(f"History CSV:         {settings['history_path']}")
+    header = (
+      f"{'Epoch':>5} | {'Train Loss':>10} | {'Train Acc (%)':>13} | "
+      f"{'Val Loss':>8} | {'Val Acc (%)':>11} | {'Val Macro-F1':>12}"
+    )
+    lines.append(header)
+    lines.append("-" * len(header))
+    for ep in settings["epoch_history"]:
+      lines.append(
+        f"{ep['epoch']:5d} | {ep['train_loss']:10.4f} | {ep['train_accuracy']:13.2f} | "
+        f"{ep['val_loss']:8.4f} | {ep['val_accuracy']:11.2f} | {ep['val_macro_f1']:12.4f}"
+      )
+
   lines.append("")
   lines.append("=" * 78)
 
