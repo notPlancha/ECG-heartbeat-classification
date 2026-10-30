@@ -61,6 +61,7 @@ except ImportError:
   )
 
 from src.dataset import ECGDataset, get_data_loader
+from src.experiment import append_run_evaluation, resolve_run_dir
 from src.model import (
   MODELS,
   BaseECGModel,
@@ -223,6 +224,7 @@ def evaluate_model(
   figures_dir: str | Path = DEFAULT_FIGURES_DIR,
   tables_dir: str | Path = DEFAULT_TABLES_DIR,
   output_dir: str | Path | None = None,
+  run: str | None = None,
   seed: int = DEFAULT_RANDOM_STATE,
 ) -> dict[str, object]:
   """
@@ -230,7 +232,25 @@ def evaluate_model(
   """
   set_seed(seed)
 
-  if output_dir is not None:
+  run_dir = resolve_run_dir(run, must_exist=True) if run else None
+  if run_dir is not None:
+    results_dir = run_dir
+    models_dir = run_dir
+    figures_dir = run_dir
+    tables_dir = run_dir
+    print(f"Isolated experiment run evaluation: {run_dir.name} ({run_dir})")
+    weights = list(run_dir.glob("*.joblib")) + list(run_dir.glob("*.pt"))
+    if weights and (
+      checkpoint_path is None
+      or Path(checkpoint_path).resolve().parent == Path(DEFAULT_MODELS_DIR).resolve()
+    ):
+      checkpoint_path = str(weights[0])
+      stem = weights[0].stem.lower()
+      if "random_forest" in stem:
+        model_name = "RandomForest"
+      elif "logistic_regression" in stem:
+        model_name = "LogisticRegression"
+  elif output_dir is not None:
     results_dir = output_dir
 
   data_p = Path(data_path) if Path(data_path).exists() else here(data_path)
@@ -357,47 +377,71 @@ def evaluate_model(
     "Macro_Precision": results["macro_precision"],
   }
 
-  metrics_csv = res_p / "metrics.csv"
-  if metrics_csv.exists():
-    try:
-      existing_df = pd.read_csv(metrics_csv)
-      existing_df = existing_df[existing_df["Model"] != model_tag]
-      summary_df = pd.concat([existing_df, pd.DataFrame([row_data])], ignore_index=True)
-    except pd.errors.EmptyDataError, ValueError, KeyError:
-      summary_df = pd.DataFrame([row_data])
+  if run_dir is not None:
+    metrics_csv = run_dir / "metrics.csv"
+    pd.DataFrame([row_data]).to_csv(metrics_csv, index=False)
+    print(f"\nSaved run metrics table to: {metrics_csv}")
+
+    per_class_table_csv = run_dir / f"{slug}_per_class_metrics.csv"
+    results["per_class_table"].to_csv(per_class_table_csv, index=False)
+    print(f"Saved per-class metrics to: {per_class_table_csv}")
+
+    cm_table_csv = run_dir / f"{slug}_confusion_matrix.csv"
+    cm_df.to_csv(cm_table_csv)
+    print(f"Saved confusion matrix CSV to: {cm_table_csv}")
+
+    cm_fig_png = run_dir / f"{slug}_confusion_matrix.png"
+    plot_confusion_matrix(
+      cm, CLASS_NAMES, cm_fig_png, title=f"Confusion Matrix - {model_tag}"
+    )
+    print(f"Saved confusion matrix figure to: {cm_fig_png}")
+
+    append_run_evaluation(run_dir, results)
+    print(f"Updated run settings at: {run_dir / 'settings.txt'}")
   else:
-    summary_df = pd.DataFrame([row_data])
+    metrics_csv = res_p / "metrics.csv"
+    if metrics_csv.exists():
+      try:
+        existing_df = pd.read_csv(metrics_csv)
+        existing_df = existing_df[existing_df["Model"] != model_tag]
+        summary_df = pd.concat(
+          [existing_df, pd.DataFrame([row_data])], ignore_index=True
+        )
+      except pd.errors.EmptyDataError, ValueError, KeyError:
+        summary_df = pd.DataFrame([row_data])
+    else:
+      summary_df = pd.DataFrame([row_data])
 
-  summary_df.to_csv(metrics_csv, index=False)
-  print(f"\nUpdated overall metrics table at: {metrics_csv}")
+    summary_df.to_csv(metrics_csv, index=False)
+    print(f"\nUpdated overall metrics table at: {metrics_csv}")
 
-  # Save detailed per-class metrics in tables directory and root results directory
-  per_class_table_csv = tbl_p / f"{slug}_per_class_metrics.csv"
-  results["per_class_table"].to_csv(per_class_table_csv, index=False)
-  print(f"Saved per-class metrics to: {per_class_table_csv}")
+    # Save detailed per-class metrics in tables directory and root results directory
+    per_class_table_csv = tbl_p / f"{slug}_per_class_metrics.csv"
+    results["per_class_table"].to_csv(per_class_table_csv, index=False)
+    print(f"Saved per-class metrics to: {per_class_table_csv}")
 
-  per_class_root_csv = res_p / "per_class_metrics.csv"
-  results["per_class_table"].to_csv(per_class_root_csv, index=False)
+    per_class_root_csv = res_p / "per_class_metrics.csv"
+    results["per_class_table"].to_csv(per_class_root_csv, index=False)
 
-  # Save confusion matrix CSV in tables directory and root results directory
-  cm_table_csv = tbl_p / f"{slug}_confusion_matrix.csv"
-  cm_df.to_csv(cm_table_csv)
-  print(f"Saved confusion matrix CSV to: {cm_table_csv}")
+    # Save confusion matrix CSV in tables directory and root results directory
+    cm_table_csv = tbl_p / f"{slug}_confusion_matrix.csv"
+    cm_df.to_csv(cm_table_csv)
+    print(f"Saved confusion matrix CSV to: {cm_table_csv}")
 
-  cm_root_csv = res_p / "confusion_matrix.csv"
-  cm_df.to_csv(cm_root_csv)
+    cm_root_csv = res_p / "confusion_matrix.csv"
+    cm_df.to_csv(cm_root_csv)
 
-  # Save confusion matrix figure in figures directory and root results directory
-  cm_fig_png = fig_p / f"{slug}_confusion_matrix.png"
-  plot_confusion_matrix(
-    cm, CLASS_NAMES, cm_fig_png, title=f"Confusion Matrix - {model_tag}"
-  )
-  print(f"Saved confusion matrix figure to: {cm_fig_png}")
+    # Save confusion matrix figure in figures directory and root results directory
+    cm_fig_png = fig_p / f"{slug}_confusion_matrix.png"
+    plot_confusion_matrix(
+      cm, CLASS_NAMES, cm_fig_png, title=f"Confusion Matrix - {model_tag}"
+    )
+    print(f"Saved confusion matrix figure to: {cm_fig_png}")
 
-  cm_root_png = res_p / "confusion_matrix.png"
-  plot_confusion_matrix(
-    cm, CLASS_NAMES, cm_root_png, title=f"Confusion Matrix - {model_tag}"
-  )
+    cm_root_png = res_p / "confusion_matrix.png"
+    plot_confusion_matrix(
+      cm, CLASS_NAMES, cm_root_png, title=f"Confusion Matrix - {model_tag}"
+    )
 
   return results
 
@@ -456,6 +500,16 @@ def main() -> None:
     help=f"Directory where table CSVs are saved (default: {DEFAULT_TABLES_DIR}).",
   )
   parser.add_argument(
+    "--run",
+    nargs="?",
+    const="latest",
+    default=None,
+    help=(
+      "Evaluate an isolated run directory (e.g. --run or --run run1). "
+      "Defaults to latest run in results/runs/ if 'latest' or omitted."
+    ),
+  )
+  parser.add_argument(
     "--seed",
     type=int,
     default=DEFAULT_RANDOM_STATE,
@@ -472,6 +526,7 @@ def main() -> None:
     models_dir=args.models_dir,
     figures_dir=args.figures_dir,
     tables_dir=args.tables_dir,
+    run=args.run,
     seed=args.seed,
   )
 

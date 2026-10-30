@@ -240,6 +240,7 @@ DEFAULT_RESULTS_DIR: str = str(here("results"))
 DEFAULT_MODELS_DIR: str = str(here("results", "models"))
 DEFAULT_FIGURES_DIR: str = str(here("results", "figures"))
 DEFAULT_TABLES_DIR: str = str(here("results", "tables"))
+DEFAULT_RUNS_DIR: str = str(here("results", "runs"))
 
 
 # ==============================================================================

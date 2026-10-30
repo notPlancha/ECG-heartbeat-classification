@@ -87,6 +87,16 @@ tasks:
     cmds:
       - uv run python src/evaluate.py --model RandomForest --checkpoint results/models/random_forest.joblib --seed 42 {{.CLI_ARGS}}
 
+  train-run:
+    desc: 'Train model into isolated run folder (usage: task train-run -- --model RandomForest --resample hybrid)'
+    cmds:
+      - uv run python src/train.py --run {{.CLI_ARGS}}
+
+  evaluate-run:
+    desc: 'Evaluate isolated run folder (usage: task evaluate-run -- [--run run1])'
+    cmds:
+      - uv run python src/evaluate.py --run {{.CLI_ARGS}}
+
   lint:
     desc: Lint code with ruff
     cmds:

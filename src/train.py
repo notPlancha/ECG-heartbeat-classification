@@ -73,6 +73,7 @@ def to_snake_case(name: str) -> str:
 
 
 from src.dataset import ECGDataset, apply_resampling, get_data_loader
+from src.experiment import resolve_run_dir, save_run_settings
 from src.model import (
   MODELS,
   ClassicalECGModel,
@@ -390,6 +391,17 @@ def train_classical_model(
   joblib.dump(model, save_path)
   print(f"Saved trained classical model to: {save_path}")
 
+  return {
+    "val_metrics": val_metrics,
+    "train_samples": len(X_train),
+    "train_distribution": {
+      CLASS_NAMES[i]: int(c)
+      for i, c in enumerate(np.bincount(y_train, minlength=NUM_CLASSES))
+    },
+    "val_samples": len(X_val),
+    "val_distribution": val_ds.get_class_counts(),
+  }
+
 
 def train_neural_model(
   model: NeuralECGModel,
@@ -460,6 +472,7 @@ def train_neural_model(
 
   best_val_f1 = 0.0
   best_val_acc = 0.0
+  best_val_metrics: dict[str, Any] = {}
 
   for epoch in range(1, epochs + 1):
     train_loss, train_acc = train_one_epoch(
@@ -479,6 +492,7 @@ def train_neural_model(
     if val_f1 > best_val_f1:
       best_val_f1 = val_f1
       best_val_acc = val_acc
+      best_val_metrics = val_metrics
       os.makedirs(os.path.dirname(save_path), exist_ok=True)
       torch.save(
         {
@@ -513,6 +527,22 @@ def train_neural_model(
     ):
       print(f"  Class {name}: F1={f1:.4f} | Recall={rec:.4f} | Precision={prec:.4f}")
 
+  return {
+    "val_metrics": best_val_metrics,
+    "train_samples": len(train_loader.dataset),
+    "train_distribution": (
+      train_loader.dataset.get_class_counts()
+      if hasattr(train_loader.dataset, "get_class_counts")
+      else {}
+    ),
+    "val_samples": len(val_loader.dataset),
+    "val_distribution": (
+      val_loader.dataset.get_class_counts()
+      if hasattr(val_loader.dataset, "get_class_counts")
+      else {}
+    ),
+  }
+
 
 def run_training(
   model_name: str = "LogisticRegression",
@@ -530,8 +560,9 @@ def run_training(
   max_depth: int | None = DEFAULT_RF_MAX_DEPTH,
   class_weight: str | None = DEFAULT_CLASS_WEIGHT,
   resample: str = DEFAULT_RESAMPLING_STRATEGY,
+  run: str | None = None,
   seed: int = DEFAULT_RANDOM_STATE,
-) -> None:
+) -> dict[str, Any]:
   """
   Instantiate model and dispatch to classical or neural pipeline via base class check.
   """
@@ -548,11 +579,19 @@ def run_training(
   )
 
   slug = to_snake_case(type(model).__name__)
+  run_dir = resolve_run_dir(run)
+  if run_dir is not None:
+    run_dir.mkdir(parents=True, exist_ok=True)
+    ext = ".joblib" if isinstance(model, ClassicalECGModel) else ".pt"
+    if save_path is None:
+      save_path = str(run_dir / f"{slug}{ext}")
+    print(f"Isolated experiment run active: {run_dir.name} ({run_dir})")
+
   match model:
     case ClassicalECGModel():
       if save_path is None:
         save_path = str(Path(DEFAULT_MODELS_DIR) / f"{slug}.joblib")
-      train_classical_model(
+      train_result = train_classical_model(
         model=model,
         train_path=train_path,
         val_path=val_path,
@@ -564,7 +603,7 @@ def run_training(
     case NeuralECGModel():
       if save_path is None:
         save_path = str(Path(DEFAULT_MODELS_DIR) / f"{slug}.pt")
-      train_neural_model(
+      train_result = train_neural_model(
         model=model,
         train_path=train_path,
         val_path=val_path,
@@ -584,6 +623,43 @@ def run_training(
       raise TypeError(
         f"Model '{type(model).__name__}' does not inherit from BaseECGModel."
       )
+
+  if run_dir is not None:
+    settings = {
+      "model_name": model_name,
+      "model_class": type(model).__name__,
+      "parameters": model.count_parameters(),
+      "seed": seed,
+      "class_weight": class_weight,
+      "resample": resample,
+      "augment": augment,
+      "balanced_sampling": balanced_sampling,
+      "train_path": str(train_path),
+      "val_path": str(val_path),
+      "train_samples": train_result.get("train_samples"),
+      "train_distribution": train_result.get("train_distribution"),
+      "val_samples": train_result.get("val_samples"),
+      "val_distribution": train_result.get("val_distribution"),
+      "val_metrics": train_result.get("val_metrics"),
+    }
+    match model:
+      case ClassicalECGModel():
+        settings["hyperparameters"] = {
+          "n_estimators": n_estimators,
+          "max_depth": max_depth,
+          "random_state": seed,
+        }
+      case NeuralECGModel():
+        settings["hyperparameters"] = {
+          "epochs": epochs,
+          "lr": lr,
+          "optimizer": optimizer_name,
+          "batch_size": batch_size,
+        }
+    settings_file = save_run_settings(run_dir, settings)
+    print(f"Saved run settings to: {settings_file}")
+
+  return train_result
 
 
 def main() -> None:
@@ -691,6 +767,16 @@ def main() -> None:
     ),
   )
   parser.add_argument(
+    "--run",
+    nargs="?",
+    const="auto",
+    default=None,
+    help=(
+      "Save experiment outputs to an isolated run folder (e.g. --run or --run run1). "
+      "Automatically increments (run1, run2, ...) if 'auto' or omitted."
+    ),
+  )
+  parser.add_argument(
     "--seed",
     "--random-state",
     dest="seed",
@@ -718,6 +804,7 @@ def main() -> None:
     max_depth=max_depth,
     class_weight=args.class_weight,
     resample=args.resample,
+    run=args.run,
     seed=args.seed,
   )
 

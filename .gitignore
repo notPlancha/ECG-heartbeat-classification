@@ -4,6 +4,12 @@ dataset/*
 *.joblib
 *.pkl
 
+# Experiment run directories and settings
+runs/
+results/runs/
+results/run*/
+run*/
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[codz]
