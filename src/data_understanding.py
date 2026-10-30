@@ -41,6 +41,8 @@ try:
     DEFAULT_DATA_DIR,
     DEFAULT_POST_R,
     DEFAULT_PRE_R,
+    DEFAULT_RANDOM_STATE,
+    DEFAULT_SEED,
     DS1_RECORDS,
     DS1_TRAIN_RECORDS,
     DS1_VAL_RECORDS,
@@ -55,6 +57,7 @@ try:
     SAMPLING_RATE,
     WINDOW_SIZE,
     resolve_data_dir,
+    set_seed,
   )
 except ImportError:
   from constants import (
@@ -69,6 +72,8 @@ except ImportError:
     DEFAULT_DATA_DIR,
     DEFAULT_POST_R,
     DEFAULT_PRE_R,
+    DEFAULT_RANDOM_STATE,
+    DEFAULT_SEED,
     DS1_RECORDS,
     DS1_TRAIN_RECORDS,
     DS1_VAL_RECORDS,
@@ -83,6 +88,7 @@ except ImportError:
     SAMPLING_RATE,
     WINDOW_SIZE,
     resolve_data_dir,
+    set_seed,
   )
 
 __all__ = [
@@ -97,6 +103,8 @@ __all__ = [
   "DEFAULT_DATA_DIR",
   "DEFAULT_POST_R",
   "DEFAULT_PRE_R",
+  "DEFAULT_RANDOM_STATE",
+  "DEFAULT_SEED",
   "DS1_RECORDS",
   "DS1_TRAIN_RECORDS",
   "DS1_VAL_RECORDS",
@@ -117,6 +125,7 @@ __all__ = [
   "load_record",
   "resolve_data_dir",
   "segment_heartbeats",
+  "set_seed",
 ]
 
 

@@ -37,11 +37,13 @@ try:
     DEFAULT_BATCH_SIZE,
     DEFAULT_FIGURES_DIR,
     DEFAULT_MODELS_DIR,
+    DEFAULT_RANDOM_STATE,
     DEFAULT_RESULTS_DIR,
     DEFAULT_TABLES_DIR,
     DEFAULT_TEST_PATH,
     NUM_CLASSES,
     WINDOW_SIZE,
+    set_seed,
   )
 except ImportError:
   from constants import (
@@ -49,11 +51,13 @@ except ImportError:
     DEFAULT_BATCH_SIZE,
     DEFAULT_FIGURES_DIR,
     DEFAULT_MODELS_DIR,
+    DEFAULT_RANDOM_STATE,
     DEFAULT_RESULTS_DIR,
     DEFAULT_TABLES_DIR,
     DEFAULT_TEST_PATH,
     NUM_CLASSES,
     WINDOW_SIZE,
+    set_seed,
   )
 
 from src.dataset import ECGDataset, get_data_loader
@@ -219,10 +223,13 @@ def evaluate_model(
   figures_dir: str | Path = DEFAULT_FIGURES_DIR,
   tables_dir: str | Path = DEFAULT_TABLES_DIR,
   output_dir: str | Path | None = None,
+  seed: int = DEFAULT_RANDOM_STATE,
 ) -> dict[str, object]:
   """
   Full evaluation flow: load data, restore model, compute metrics, and export artifacts.
   """
+  set_seed(seed)
+
   if output_dir is not None:
     results_dir = output_dir
 
@@ -234,18 +241,24 @@ def evaluate_model(
   print(f"Device: {device}")
   print(f"Loading test split from {data_p}...")
 
-  test_ds = ECGDataset.from_npz(data_p, augment=False)
+  test_ds = ECGDataset.from_npz(data_p, augment=False, seed=seed)
   test_loader = get_data_loader(
     test_ds,
     batch_size=batch_size,
     shuffle=False,
     balanced_sampling=False,
+    seed=seed,
   )
 
   print(f"Loaded {len(test_ds)} test heartbeats.")
   print(f"Class distribution: {test_ds.get_class_counts()}")
 
-  model = get_model(model_name, input_dim=WINDOW_SIZE, num_classes=NUM_CLASSES)
+  model = get_model(
+    model_name,
+    input_dim=WINDOW_SIZE,
+    num_classes=NUM_CLASSES,
+    random_state=seed,
+  )
   slug = to_snake_case(type(model).__name__)
 
   if checkpoint_path is None:
@@ -442,6 +455,12 @@ def main() -> None:
     default=DEFAULT_TABLES_DIR,
     help=f"Directory where table CSVs are saved (default: {DEFAULT_TABLES_DIR}).",
   )
+  parser.add_argument(
+    "--seed",
+    type=int,
+    default=DEFAULT_RANDOM_STATE,
+    help=f"Random seed for evaluation (default: {DEFAULT_RANDOM_STATE}).",
+  )
   args = parser.parse_args()
 
   evaluate_model(
@@ -453,6 +472,7 @@ def main() -> None:
     models_dir=args.models_dir,
     figures_dir=args.figures_dir,
     tables_dir=args.tables_dir,
+    seed=args.seed,
   )
 
 

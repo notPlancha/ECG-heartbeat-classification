@@ -136,10 +136,12 @@ def run_pipeline(
   filter_order: int = 3,
   clip_min: float = -3.0,
   clip_max: float = 3.0,
+  seed: int = du.DEFAULT_RANDOM_STATE,
 ) -> dict[str, dict]:
   """
   Run the end-to-end dataset preparation pipeline.
   """
+  du.set_seed(seed)
   data_dir = du.resolve_data_dir(data_dir)
   output_p = Path(output_dir) if Path(output_dir).is_absolute() else here(output_dir)
   results_p = (
@@ -333,6 +335,12 @@ if __name__ == "__main__":
   parser.add_argument(
     "--clip-max", type=float, default=3.0, help="Max Z-score clipping limit"
   )
+  parser.add_argument(
+    "--seed",
+    type=int,
+    default=du.DEFAULT_RANDOM_STATE,
+    help=f"Random seed for reproducibility (default: {du.DEFAULT_RANDOM_STATE})",
+  )
   args = parser.parse_args()
 
   run_pipeline(
@@ -345,4 +353,5 @@ if __name__ == "__main__":
     highcut=args.highcut,
     clip_min=args.clip_min,
     clip_max=args.clip_max,
+    seed=args.seed,
   )

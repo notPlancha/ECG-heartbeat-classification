@@ -139,9 +139,13 @@ class LogisticRegression(NeuralECGModel):
     input_dim: int = WINDOW_SIZE,
     num_classes: int = NUM_CLASSES,
     bias: bool = True,
+    random_state: int | None = DEFAULT_RANDOM_STATE,
     **kwargs: Any,
   ) -> None:
+    if random_state is not None:
+      torch.manual_seed(random_state)
     super().__init__(input_dim=input_dim, num_classes=num_classes)
+    self.random_state = random_state
     self.linear = nn.Linear(input_dim, num_classes, bias=bias)
 
   def forward(self, x: torch.Tensor) -> torch.Tensor:

@@ -11,12 +11,13 @@ Features:
    - Additive Gaussian noise (sigma = 0.02).
    - Low-frequency baseline wander simulation.
 3. Class weight calculation utility to mitigate severe class imbalance.
-4. Data loader utility with optional balanced batch sampling.
+4. Data loader utility with optional balanced batch sampling and deterministic seeding.
 
 Author: Course Instructor Solution
 Course: ECG Heartbeat Classification on Edge-AI
 """
 
+import random
 from collections import Counter
 from collections.abc import Callable
 from pathlib import Path
@@ -37,9 +38,21 @@ except ImportError:
 
 # Class name definitions imported from centralized constants
 try:
-  from src.constants import CLASS_NAMES, CLASS_TO_IDX, IDX_TO_CLASS, NUM_CLASSES
+  from src.constants import (
+    CLASS_NAMES,
+    CLASS_TO_IDX,
+    DEFAULT_RANDOM_STATE,
+    IDX_TO_CLASS,
+    NUM_CLASSES,
+  )
 except ImportError:
-  from constants import CLASS_NAMES, CLASS_TO_IDX, IDX_TO_CLASS, NUM_CLASSES
+  from constants import (
+    CLASS_NAMES,
+    CLASS_TO_IDX,
+    DEFAULT_RANDOM_STATE,
+    IDX_TO_CLASS,
+    NUM_CLASSES,
+  )
 
 __all__ = [
   "CLASS_NAMES",
@@ -79,6 +92,8 @@ class ECGDataset(Dataset):
       Custom transform function applied to waveform.
   to_torch : bool
       Whether to return PyTorch tensors if PyTorch is installed (default: True).
+  seed : int, optional
+      Random seed for deterministic augmentations.
   """
 
   def __init__(
@@ -94,6 +109,7 @@ class ECGDataset(Dataset):
     noise_std: float = 0.02,
     transform: Callable[[np.ndarray], np.ndarray] | None = None,
     to_torch: bool = True,
+    seed: int | None = None,
   ) -> None:
     if X.ndim == 2:
       # Ensure shape is (N, 1, L)
@@ -110,6 +126,8 @@ class ECGDataset(Dataset):
     self.noise_std = noise_std
     self.transform = transform
     self.to_torch = to_torch and HAS_TORCH
+    self.seed = seed
+    self.rng = np.random.default_rng(seed) if seed is not None else None
 
   def __len__(self) -> int:
     return len(self.y)
@@ -121,10 +139,15 @@ class ECGDataset(Dataset):
     """
     augmented = beat.copy()
     length = augmented.shape[-1]
+    rng = self.rng if self.rng is not None else np.random
 
     # 1. Random temporal shift (jitter)
     if self.jitter_max > 0:
-      shift = np.random.randint(-self.jitter_max, self.jitter_max + 1)
+      shift = (
+        int(rng.integers(-self.jitter_max, self.jitter_max + 1))
+        if hasattr(rng, "integers")
+        else int(rng.randint(-self.jitter_max, self.jitter_max + 1))
+      )
       if shift != 0:
         shifted = np.zeros_like(augmented)
         if shift > 0:
@@ -138,21 +161,21 @@ class ECGDataset(Dataset):
 
     # 2. Random amplitude scaling
     if self.scale_range is not None:
-      scale = np.random.uniform(self.scale_range[0], self.scale_range[1])
+      scale = float(rng.uniform(self.scale_range[0], self.scale_range[1]))
       augmented = augmented * scale
 
     # 3. Additive Gaussian noise
     if self.noise_std > 0:
-      noise = np.random.normal(0, self.noise_std, size=augmented.shape)
+      noise = rng.normal(0, self.noise_std, size=augmented.shape)
       augmented = augmented + noise
 
     # 4. Low-frequency baseline wander simulation
-    if np.random.rand() > 0.5:
-      # Generate a gentle half-sine wave baseline offset
-      freq = np.random.uniform(0.2, 0.8)  # Hz relative
+    coin = (rng.random() if hasattr(rng, "random") else rng.rand()) > 0.5
+    if coin:
+      freq = float(rng.uniform(0.2, 0.8))
       t = np.linspace(0, 1, length)
-      phase = np.random.uniform(0, 2 * np.pi)
-      drift_amplitude = np.random.uniform(0.05, 0.15)
+      phase = float(rng.uniform(0, 2 * np.pi))
+      drift_amplitude = float(rng.uniform(0.05, 0.15))
       drift = drift_amplitude * np.sin(2 * np.pi * freq * t + phase)
       augmented = augmented + drift
 
@@ -180,6 +203,7 @@ class ECGDataset(Dataset):
     npz_path: str | Path,
     augment: bool = False,
     to_torch: bool = True,
+    seed: int | None = None,
   ) -> ECGDataset:
     """Load an ECGDataset directly from a saved .npz file."""
     path = Path(npz_path)
@@ -196,6 +220,7 @@ class ECGDataset(Dataset):
       symbols=data.get("symbols", None),
       augment=augment,
       to_torch=to_torch,
+      seed=seed,
     )
 
   def get_class_counts(self) -> dict[str, int]:
@@ -247,14 +272,19 @@ def get_data_loader(
   shuffle: bool = True,
   balanced_sampling: bool = False,
   num_workers: int = 0,
+  seed: int | None = DEFAULT_RANDOM_STATE,
 ) -> DataLoader | None:
   """
-  Create a PyTorch DataLoader with optional class-balanced sampling.
+  Create a PyTorch DataLoader with optional class-balanced sampling and deterministic generator.
   """
   if not HAS_TORCH:
     raise RuntimeError(
       "PyTorch is not installed. Install PyTorch or use ECGDataset with pure NumPy."
     )
+
+  generator = torch.Generator()
+  if seed is not None:
+    generator.manual_seed(seed)
 
   sampler = None
   if balanced_sampling:
@@ -264,8 +294,19 @@ def get_data_loader(
       weights=sample_weights,
       num_samples=len(sample_weights),
       replacement=True,
+      generator=generator if seed is not None else None,
     )
-    shuffle = False  # sampler is mutually exclusive with shuffle
+    shuffle = False
+
+  worker_init_fn = None
+  if seed is not None:
+
+    def _seed_worker(worker_id: int) -> None:
+      worker_seed = (seed + worker_id) % (2**32)
+      np.random.seed(worker_seed)
+      random.seed(worker_seed)
+
+    worker_init_fn = _seed_worker
 
   return DataLoader(
     dataset,
@@ -273,5 +314,7 @@ def get_data_loader(
     shuffle=shuffle,
     sampler=sampler,
     num_workers=num_workers,
+    generator=generator if seed is not None else None,
+    worker_init_fn=worker_init_fn,
     pin_memory=torch.cuda.is_available(),
   )

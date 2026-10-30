@@ -252,8 +252,40 @@ DEFAULT_OPTIMIZER: str = "sgd"
 DEFAULT_BATCH_SIZE: int = 64
 DEFAULT_CLASS_WEIGHT: str = "balanced"
 DEFAULT_RANDOM_STATE: int = 42
+DEFAULT_SEED: int = DEFAULT_RANDOM_STATE
 
 DEFAULT_RF_N_ESTIMATORS: int = 100
 DEFAULT_RF_MAX_DEPTH: int = 20
 DEFAULT_RF_MIN_SAMPLES_LEAF: int = 2
 DEFAULT_RF_MAX_FEATURES: str = "sqrt"
+
+
+def set_seed(seed: int = DEFAULT_RANDOM_STATE) -> None:
+  """
+  Configure global seeds across Python, NumPy, and PyTorch for deterministic execution.
+
+  Parameters
+  ----------
+  seed : int
+      Random seed integer (default: 42).
+  """
+  import os
+  import random
+
+  import numpy as np
+
+  os.environ["PYTHONHASHSEED"] = str(seed)
+  random.seed(seed)
+  np.random.seed(seed)
+
+  try:
+    import torch
+
+    torch.manual_seed(seed)
+    if torch.cuda.is_available():
+      torch.cuda.manual_seed(seed)
+      torch.cuda.manual_seed_all(seed)
+      torch.backends.cudnn.deterministic = True
+      torch.backends.cudnn.benchmark = False
+  except ImportError:
+    pass

@@ -40,6 +40,7 @@ try:
     DEFAULT_VAL_PATH,
     NUM_CLASSES,
     WINDOW_SIZE,
+    set_seed,
   )
 except ImportError:
   from constants import (
@@ -48,6 +49,7 @@ except ImportError:
     DEFAULT_CLASS_WEIGHT,
     DEFAULT_EPOCHS,
     DEFAULT_LR,
+    DEFAULT_MODELS_DIR,
     DEFAULT_OPTIMIZER,
     DEFAULT_RANDOM_STATE,
     DEFAULT_RF_MAX_DEPTH,
@@ -56,6 +58,7 @@ except ImportError:
     DEFAULT_VAL_PATH,
     NUM_CLASSES,
     WINDOW_SIZE,
+    set_seed,
   )
 
 
@@ -158,6 +161,7 @@ def load_data(
   balanced_sampling: bool = False,
   quick_test: bool = False,
   class_weight: str | None = DEFAULT_CLASS_WEIGHT,
+  seed: int | None = DEFAULT_RANDOM_STATE,
 ) -> tuple[DataLoader, DataLoader, torch.Tensor | None]:
   """
   Load preprocessed .npz datasets and return train/val loaders with class weights.
@@ -176,8 +180,8 @@ def load_data(
       "Run 'uv run python src/prepare_data.py' first."
     )
 
-  train_ds = ECGDataset.from_npz(train_p, augment=augment)
-  val_ds = ECGDataset.from_npz(val_p, augment=False)
+  train_ds = ECGDataset.from_npz(train_p, augment=augment, seed=seed)
+  val_ds = ECGDataset.from_npz(val_p, augment=False, seed=seed)
 
   if quick_test:
     train_ds.X = train_ds.X[:1000]
@@ -192,12 +196,14 @@ def load_data(
     batch_size=batch_size,
     shuffle=not balanced_sampling,
     balanced_sampling=balanced_sampling,
+    seed=seed,
   )
   val_loader = get_data_loader(
     val_ds,
     batch_size=batch_size,
     shuffle=False,
     balanced_sampling=False,
+    seed=seed,
   )
 
   print(f"Loaded {len(train_ds)} train beats and {len(val_ds)} validation beats.")
@@ -290,10 +296,13 @@ def train_classical_model(
   val_path: str = DEFAULT_VAL_PATH,
   quick_test: bool = False,
   save_path: str | None = None,
+  seed: int = DEFAULT_RANDOM_STATE,
 ) -> None:
   """
   Train any classical (non-neural) model adhering to ClassicalECGModel.
   """
+  set_seed(seed)
+
   train_p = Path(train_path) if Path(train_path).exists() else here(train_path)
   val_p = Path(val_path) if Path(val_path).exists() else here(val_path)
 
@@ -309,8 +318,8 @@ def train_classical_model(
     save_path = str(here(save_path))
 
   print(f"Loading training split from {train_p}...")
-  train_ds = ECGDataset.from_npz(train_p, augment=False)
-  val_ds = ECGDataset.from_npz(val_p, augment=False)
+  train_ds = ECGDataset.from_npz(train_p, augment=False, seed=seed)
+  val_ds = ECGDataset.from_npz(val_p, augment=False, seed=seed)
 
   X_train = train_ds.X
   y_train = train_ds.y
@@ -326,6 +335,7 @@ def train_classical_model(
   print(f"Train samples: {len(X_train)} | Val samples: {len(X_val)}")
   print(f"Train class distribution: {train_ds.get_class_counts()}")
   print(f"Val class distribution:   {val_ds.get_class_counts()}")
+  print(f"Random seed: {seed}")
 
   print(f"Fitting model: {type(model).__name__}...")
   model.fit(X_train, y_train)
@@ -366,11 +376,13 @@ def train_neural_model(
   quick_test: bool = False,
   class_weight: str | None = DEFAULT_CLASS_WEIGHT,
   save_path: str | None = None,
-  random_state: int = DEFAULT_RANDOM_STATE,
+  seed: int = DEFAULT_RANDOM_STATE,
 ) -> None:
   """
   Train any neural network adhering to NeuralECGModel.
   """
+  set_seed(seed)
+
   slug = to_snake_case(type(model).__name__)
   if save_path is None:
     save_path = str(Path(DEFAULT_MODELS_DIR) / f"{slug}.pt")
@@ -388,6 +400,7 @@ def train_neural_model(
     balanced_sampling=balanced_sampling,
     quick_test=quick_test,
     class_weight=class_weight,
+    seed=seed,
   )
 
   model = model.to(device)
@@ -406,6 +419,7 @@ def train_neural_model(
 
   param_count = model.count_parameters()
   print(f"Model: {type(model).__name__} ({param_count} parameters)")
+  print(f"Random seed: {seed}")
   if class_weights is not None:
     print(
       f"Class weights (N, S, V, F): {[round(w, 4) for w in class_weights.tolist()]}"
@@ -444,6 +458,7 @@ def train_neural_model(
           "val_macro_f1": val_f1,
           "val_accuracy": val_acc,
           "val_metrics": val_metrics,
+          "random_seed": seed,
         },
         save_path,
       )
@@ -484,13 +499,12 @@ def run_training(
   n_estimators: int = DEFAULT_RF_N_ESTIMATORS,
   max_depth: int | None = DEFAULT_RF_MAX_DEPTH,
   class_weight: str | None = DEFAULT_CLASS_WEIGHT,
-  random_state: int = DEFAULT_RANDOM_STATE,
+  seed: int = DEFAULT_RANDOM_STATE,
 ) -> None:
   """
   Instantiate model and dispatch to classical or neural pipeline via base class check.
   """
-  torch.manual_seed(random_state)
-  np.random.seed(random_state)
+  set_seed(seed)
 
   model = get_model(
     model_name,
@@ -499,7 +513,7 @@ def run_training(
     n_estimators=n_estimators,
     max_depth=max_depth,
     class_weight=class_weight,
-    random_state=random_state,
+    random_state=seed,
   )
 
   slug = to_snake_case(type(model).__name__)
@@ -513,6 +527,7 @@ def run_training(
         val_path=val_path,
         quick_test=quick_test,
         save_path=save_path,
+        seed=seed,
       )
     case NeuralECGModel():
       if save_path is None:
@@ -530,7 +545,7 @@ def run_training(
         quick_test=quick_test,
         class_weight=class_weight,
         save_path=save_path,
-        random_state=random_state,
+        seed=seed,
       )
     case _:
       raise TypeError(
@@ -633,7 +648,7 @@ def main() -> None:
   parser.add_argument(
     "--seed",
     "--random-state",
-    dest="random_state",
+    dest="seed",
     type=int,
     default=DEFAULT_RANDOM_STATE,
     help=f"Random seed for reproducibility (default: {DEFAULT_RANDOM_STATE}).",
@@ -657,7 +672,7 @@ def main() -> None:
     n_estimators=args.n_estimators,
     max_depth=max_depth,
     class_weight=args.class_weight,
-    random_state=args.random_state,
+    seed=args.seed,
   )
 
 
