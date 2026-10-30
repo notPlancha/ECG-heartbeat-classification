@@ -3,6 +3,7 @@ from class_weighting import calculate_class_weights
 import torch
 from torch.utils.data import TensorDataset, DataLoader
 import torch.nn as nn
+import numpy as np
 import matplotlib.pyplot as plt
 from sklearn.metrics import classification_report
 from sklearn.utils import resample
@@ -35,7 +36,7 @@ class CNN(nn.Module):
 heartbeats_training, annotations_training = load_training_data()
 heartbeats_testing, annotations_testing = load_testing_data()
 
-# Convert data to NumPy arrays for resampling
+# Convert training data to NumPy arrays for resampling
 heartbeats_training_np = heartbeats_training
 annotations_training_np = annotations_training
 
@@ -53,31 +54,31 @@ for cls in classes:
     cls_heartbeats = heartbeats_training_np[cls_indices]
     cls_annotations = annotations_training_np[cls_indices]
 
-    # Resample the current class to match the maximum count
-    cls_heartbeats_oversampled = resample(
-        cls_heartbeats,
+    # Resample indices once to guarantee heartbeats and annotations stay perfectly aligned
+    resampled_indices = resample(
+        np.arange(len(cls_indices)),
         replace=True,  # Allow replacement
         n_samples=max_count,  # Match the maximum class count
         random_state=42
     )
-    cls_annotations_oversampled = resample(
-        cls_annotations,
-        replace=True,
-        n_samples=max_count,
-        random_state=42
-    )
 
-    # Append the oversampled data
-    oversampled_heartbeats.append(cls_heartbeats_oversampled)
-    oversampled_annotations.append(cls_annotations_oversampled)
+    # Append the oversampled data using the same index mask
+    oversampled_heartbeats.append(cls_heartbeats[resampled_indices])
+    oversampled_annotations.append(cls_annotations[resampled_indices])
 
 # Combine all oversampled classes
 heartbeats_training_resampled = np.vstack(oversampled_heartbeats)
 annotations_training_resampled = np.hstack(oversampled_annotations)
 
-# Convert back to tensors
+# Convert training data back to tensors
 heartbeats_training = torch.tensor(heartbeats_training_resampled, dtype=torch.float32)
 annotations_training = torch.tensor(annotations_training_resampled, dtype=torch.long)
+
+# Ensure testing data are properly converted to tensors (prevents TypeError if returned as raw arrays/lists)
+if not isinstance(heartbeats_testing, torch.Tensor):
+    heartbeats_testing = torch.tensor(heartbeats_testing, dtype=torch.float32)
+if not isinstance(annotations_testing, torch.Tensor):
+    annotations_testing = torch.tensor(annotations_testing, dtype=torch.long)
 
 # Create DataLoader objects
 train_dataset = TensorDataset(heartbeats_training, annotations_training)
