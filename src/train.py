@@ -11,6 +11,7 @@ import sys
 from pathlib import Path
 
 import torch
+from sklearn.metrics import accuracy_score, precision_recall_fscore_support
 from torch import nn
 from torch.utils.data import DataLoader
 
@@ -27,39 +28,26 @@ def compute_metrics(
   y_true: torch.Tensor, y_pred: torch.Tensor, num_classes: int = NUM_CLASSES
 ) -> dict[str, float | list[float]]:
   """
-  Compute overall accuracy, per-class F1, and macro-averaged F1.
+  Compute accuracy, per-class F1, and macro F1 using scikit-learn.
   """
-  cm = torch.zeros((num_classes, num_classes), dtype=torch.long)
-  for t, p in zip(y_true.view(-1), y_pred.view(-1), strict=False):
-    cm[t, p] += 1
+  y_true_np = y_true.view(-1).cpu().numpy()
+  y_pred_np = y_pred.view(-1).cpu().numpy()
+  labels = list(range(num_classes))
 
-  f1_scores = []
-  recalls = []
-  precisions = []
-
-  for i in range(num_classes):
-    tp = cm[i, i].item()
-    fp = (cm[:, i].sum() - tp).item()
-    fn = (cm[i, :].sum() - tp).item()
-
-    prec = tp / (tp + fp) if (tp + fp) > 0 else 0.0
-    rec = tp / (tp + fn) if (tp + fn) > 0 else 0.0
-    f1 = 2 * prec * rec / (prec + rec) if (prec + rec) > 0 else 0.0
-
-    precisions.append(prec)
-    recalls.append(rec)
-    f1_scores.append(f1)
-
-  total_samples = max(cm.sum().item(), 1)
-  accuracy = 100.0 * cm.diag().sum().item() / total_samples
-  macro_f1 = sum(f1_scores) / num_classes
+  acc = accuracy_score(y_true_np, y_pred_np) * 100.0
+  _, _, macro_f1, _ = precision_recall_fscore_support(
+    y_true_np, y_pred_np, labels=labels, average="macro", zero_division=0
+  )
+  precisions, recalls, f1_scores, _ = precision_recall_fscore_support(
+    y_true_np, y_pred_np, labels=labels, average=None, zero_division=0
+  )
 
   return {
-    "accuracy": accuracy,
-    "macro_f1": macro_f1,
-    "per_class_f1": f1_scores,
-    "per_class_recall": recalls,
-    "per_class_precision": precisions,
+    "accuracy": acc,
+    "macro_f1": float(macro_f1),
+    "per_class_f1": [float(x) for x in f1_scores],
+    "per_class_recall": [float(x) for x in recalls],
+    "per_class_precision": [float(x) for x in precisions],
   }
 
 

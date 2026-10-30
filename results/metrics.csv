@@ -1,0 +1,2 @@
+Model,Parameters,Accuracy,Macro_F1,Macro_Recall,Macro_Precision
+LogisticRegression,1028,0.7116232263258528,0.3215346304384549,0.38113073881148246,0.31883340525674836

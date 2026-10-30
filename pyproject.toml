@@ -9,6 +9,7 @@ dependencies = [
     "nbconvert>=7.17.1",
     "pyhere>=1.0.3",
     "pyyaml>=6.0.3",
+    "scikit-learn>=1.9.1",
     "seaborn>=0.13.2",
     "torch>=2.14.1",
     "tqdm>=4.70.1",

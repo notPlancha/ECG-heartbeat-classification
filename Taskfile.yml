@@ -72,6 +72,11 @@ tasks:
     cmds:
       - uv run python src/train.py --model LogisticRegression --epochs 15
 
+  evaluate-baseline:
+    desc: 'Evaluate LogisticRegression baseline model on held-out test split'
+    cmds:
+      - uv run python src/evaluate.py --model LogisticRegression --checkpoint results/logistic_regression.pt
+
   lint:
     desc: Lint code with ruff
     cmds:
