@@ -70,7 +70,7 @@ tasks:
   train-baseline:
     desc: 'Train LogisticRegression baseline model on preprocessed splits'
     cmds:
-      - uv run python src/train.py --model logistic_regression --loader npz --epochs 15
+      - uv run python src/train.py --model LogisticRegression --epochs 15
 
   lint:
     desc: Lint code with ruff

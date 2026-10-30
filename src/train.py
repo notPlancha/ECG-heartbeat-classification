@@ -1,11 +1,8 @@
 """
 train.py
 ========
-Training pipeline for ECG heartbeat classification models.
-
-Supports multiple models via src.model.get_model and two data sources:
-1. Preprocessed .npz splits from dataset/processed (standard project pipeline)
-2. Raw records loaded via ml-model/data_loader.py (classmate baseline loader)
+Training pipeline for ECG heartbeat classification models using
+preprocessed .npz splits.
 """
 
 import argparse
@@ -15,34 +12,15 @@ from pathlib import Path
 
 import torch
 from torch import nn
-from torch.utils.data import DataLoader, TensorDataset
+from torch.utils.data import DataLoader
 
-# Add workspace root to sys.path
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 if str(PROJECT_ROOT) not in sys.path:
   sys.path.insert(0, str(PROJECT_ROOT))
 
-# Add ml-model directory to sys.path for importing raw loader if needed
-ML_MODEL_DIR = PROJECT_ROOT / "ml-model"
-if str(ML_MODEL_DIR) not in sys.path:
-  sys.path.insert(0, str(ML_MODEL_DIR))
-
 from src.constants import CLASS_NAMES, NUM_CLASSES, WINDOW_SIZE
 from src.dataset import ECGDataset, get_data_loader
-from src.model import get_model, list_models
-
-
-def calculate_class_weights(
-  labels: torch.Tensor, num_classes: int = NUM_CLASSES
-) -> torch.Tensor:
-  """
-  Calculate inverse-frequency class weights for cross-entropy loss.
-  """
-  labels_flat = torch.as_tensor(labels, dtype=torch.long).reshape(-1)
-  counts = torch.bincount(labels_flat, minlength=num_classes).float()
-  counts = torch.clamp(counts, min=1.0)
-  total = counts.sum()
-  return total / (num_classes * counts)
+from src.model import MODELS, get_model
 
 
 def compute_metrics(
@@ -85,42 +63,7 @@ def compute_metrics(
   }
 
 
-def load_data_from_classmates(
-  quick_test: bool = False,
-  batch_size: int = 64,
-) -> tuple[DataLoader, DataLoader, torch.Tensor]:
-  """
-  Load raw training and test data using the classmates' loader script.
-  """
-  from data_loader import _load_records, load_testing_data, load_training_data
-
-  if quick_test:
-    print("Quick test mode: loading sample records 101 and 100...")
-    X_train, y_train = _load_records(["101"])
-    X_test, y_test = _load_records(["100"])
-  else:
-    print("Loading full training data from raw WFDB records...")
-    X_train, y_train = load_training_data()
-    print("Loading full test data from raw WFDB records...")
-    X_test, y_test = load_testing_data()
-
-  X_train_t = torch.tensor(X_train, dtype=torch.float32)
-  y_train_t = torch.tensor(y_train, dtype=torch.long)
-  X_test_t = torch.tensor(X_test, dtype=torch.float32)
-  y_test_t = torch.tensor(y_test, dtype=torch.long)
-
-  class_weights = calculate_class_weights(y_train_t, NUM_CLASSES)
-
-  train_ds = TensorDataset(X_train_t, y_train_t)
-  val_ds = TensorDataset(X_test_t, y_test_t)
-
-  train_loader = DataLoader(train_ds, batch_size=batch_size, shuffle=True)
-  val_loader = DataLoader(val_ds, batch_size=batch_size, shuffle=False)
-
-  return train_loader, val_loader, class_weights
-
-
-def load_data_from_npz(
+def load_data(
   train_path: str = "dataset/processed/train.npz",
   val_path: str = "dataset/processed/val.npz",
   batch_size: int = 64,
@@ -129,32 +72,28 @@ def load_data_from_npz(
   quick_test: bool = False,
 ) -> tuple[DataLoader, DataLoader, torch.Tensor]:
   """
-  Load preprocessed heartbeat splits (.npz) using ECGDataset.
+  Load preprocessed .npz datasets and return train/val loaders with class weights.
   """
   if not os.path.exists(train_path):
     raise FileNotFoundError(
-      f"Training split not found at '{train_path}'. "
+      f"Training file '{train_path}' not found. "
       "Run 'uv run python src/prepare_data.py' first."
     )
   if not os.path.exists(val_path):
     raise FileNotFoundError(
-      f"Validation split not found at '{val_path}'. "
+      f"Validation file '{val_path}' not found. "
       "Run 'uv run python src/prepare_data.py' first."
     )
 
-  print(f"Loading preprocessed training data from {train_path}...")
   train_ds = ECGDataset.from_npz(train_path, augment=augment)
-  print(f"Loading preprocessed validation data from {val_path}...")
   val_ds = ECGDataset.from_npz(val_path, augment=False)
 
   if quick_test:
-    print("Quick test mode: truncating dataset splits...")
     train_ds.X = train_ds.X[:1000]
     train_ds.y = train_ds.y[:1000]
     val_ds.X = val_ds.X[:500]
     val_ds.y = val_ds.y[:500]
 
-  # Compute inverse-frequency class weights from the training set
   weights_np = train_ds.compute_class_weights("inverse")
   class_weights = torch.from_numpy(weights_np).float()
 
@@ -172,8 +111,8 @@ def load_data_from_npz(
   )
 
   print(f"Loaded {len(train_ds)} train beats and {len(val_ds)} validation beats.")
-  print(f"Train class distribution: {train_ds.get_class_counts()}")
-  print(f"Val class distribution:   {val_ds.get_class_counts()}")
+  print(f"Train distribution: {train_ds.get_class_counts()}")
+  print(f"Val distribution:   {val_ds.get_class_counts()}")
 
   return train_loader, val_loader, class_weights
 
@@ -186,7 +125,7 @@ def train_one_epoch(
   device: torch.device,
 ) -> tuple[float, float]:
   """
-  Train model for one epoch and return average loss and accuracy.
+  Run one training epoch and report average loss and accuracy.
   """
   model.train()
   total_loss = 0.0
@@ -224,7 +163,7 @@ def evaluate(
   num_classes: int = NUM_CLASSES,
 ) -> tuple[float, dict[str, float | list[float]]]:
   """
-  Evaluate model on a dataset and return loss and detailed metrics.
+  Evaluate model on a dataset and return loss and classification metrics.
   """
   model.eval()
   total_loss = 0.0
@@ -256,10 +195,9 @@ def evaluate(
 
 
 def run_training(
-  model_name: str = "logistic_regression",
-  loader_type: str = "npz",
+  model_name: str = "LogisticRegression",
   epochs: int = 15,
-  lr: float = 0.001,
+  lr: float = 0.01,
   optimizer_name: str = "sgd",
   batch_size: int = 64,
   augment: bool = False,
@@ -268,27 +206,19 @@ def run_training(
   save_path: str = "results/best_model.pt",
 ) -> None:
   """
-  Configure and run the full training loop with checkpointing.
+  Train a model and save the checkpoint with the best validation Macro-F1.
   """
   device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
   print(f"Using device: {device}")
 
-  if loader_type == "classmates":
-    print("Using classmates data loader (ml-model/data_loader.py)...")
-    train_loader, val_loader, class_weights = load_data_from_classmates(
-      quick_test=quick_test, batch_size=batch_size
-    )
-  elif loader_type == "npz":
-    train_loader, val_loader, class_weights = load_data_from_npz(
-      batch_size=batch_size,
-      augment=augment,
-      balanced_sampling=balanced_sampling,
-      quick_test=quick_test,
-    )
-  else:
-    raise ValueError(f"Unknown loader type: '{loader_type}'")
+  train_loader, val_loader, class_weights = load_data(
+    batch_size=batch_size,
+    augment=augment,
+    balanced_sampling=balanced_sampling,
+    quick_test=quick_test,
+  )
 
-  model = get_model(model_name, in_features=WINDOW_SIZE, num_classes=NUM_CLASSES)
+  model = get_model(model_name, input_dim=WINDOW_SIZE, num_classes=NUM_CLASSES)
   model = model.to(device)
 
   class_weights = class_weights.to(device)
@@ -301,10 +231,8 @@ def run_training(
   else:
     raise ValueError(f"Unsupported optimizer: '{optimizer_name}'")
 
-  print(
-    f"Model: {type(model).__name__} ({sum(p.numel() for p in model.parameters())} params)"
-  )
-  print(f"Optimizer: {optimizer_name.upper()} (lr={lr})")
+  param_count = sum(p.numel() for p in model.parameters())
+  print(f"Model: {type(model).__name__} ({param_count} parameters)")
   print(f"Class weights (N, S, V, F): {[round(w, 4) for w in class_weights.tolist()]}")
   print("-" * 78)
 
@@ -326,7 +254,6 @@ def run_training(
       f"Val Loss: {val_loss:.4f} | Val Acc: {val_acc:5.2f}% | Val Macro-F1: {val_f1:.4f}"
     )
 
-    # Save model weights whenever validation Macro-F1 improves
     if val_f1 > best_val_f1:
       best_val_f1 = val_f1
       best_val_acc = val_acc
@@ -334,7 +261,7 @@ def run_training(
       torch.save(
         {
           "epoch": epoch,
-          "model_name": model_name,
+          "model_name": type(model).__name__,
           "model_state_dict": model.state_dict(),
           "val_macro_f1": val_f1,
           "val_accuracy": val_acc,
@@ -350,7 +277,6 @@ def run_training(
   )
   print(f"Saved checkpoint to: {save_path}")
 
-  # Print per-class F1 breakdown for the best checkpoint
   if os.path.exists(save_path):
     ckpt = torch.load(save_path, map_location="cpu", weights_only=False)
     metrics = ckpt["val_metrics"]
@@ -366,41 +292,34 @@ def run_training(
 
 
 def main() -> None:
-  available_models = list_models()
+  model_choices = [cls.__name__ for cls in MODELS]
   parser = argparse.ArgumentParser(
     description="Train models for ECG heartbeat classification."
   )
   parser.add_argument(
     "--model",
     type=str,
-    default="logistic_regression",
-    help=f"Model architecture to train. Available: {', '.join(available_models)}.",
-  )
-  parser.add_argument(
-    "--loader",
-    type=str,
-    choices=["npz", "classmates"],
-    default="npz",
-    help="Data loading source: 'npz' (preprocessed splits) or 'classmates' (raw WFDB files).",
+    default=model_choices[0],
+    help=f"Model to train. Choices: {model_choices}.",
   )
   parser.add_argument(
     "--epochs",
     type=int,
     default=15,
-    help="Number of training epochs (default: 15).",
+    help="Number of epochs to train (default: 15).",
   )
   parser.add_argument(
     "--lr",
     type=float,
-    default=0.001,
-    help="Learning rate for the optimizer (default: 0.001).",
+    default=0.01,
+    help="Learning rate (default: 0.01).",
   )
   parser.add_argument(
     "--optimizer",
     type=str,
     choices=["sgd", "adam"],
     default="sgd",
-    help="Optimizer to use: 'sgd' or 'adam' (default: sgd).",
+    help="Optimizer: 'sgd' or 'adam' (default: sgd).",
   )
   parser.add_argument(
     "--batch-size",
@@ -411,29 +330,28 @@ def main() -> None:
   parser.add_argument(
     "--augment",
     action="store_true",
-    help="Apply training-only data augmentation (for npz loader).",
+    help="Apply training augmentations.",
   )
   parser.add_argument(
     "--balanced-sampling",
     action="store_true",
-    help="Use weighted random sampling in DataLoader (for npz loader).",
+    help="Use weighted random sampling in the training DataLoader.",
   )
   parser.add_argument(
     "--quick-test",
     action="store_true",
-    help="Run quick sanity check on a small subset of samples.",
+    help="Run on a small subset of samples for quick verification.",
   )
   parser.add_argument(
     "--save-path",
     type=str,
     default="results/logistic_regression.pt",
-    help="Path to save the best model weights.",
+    help="File path to save the best model weights.",
   )
   args = parser.parse_args()
 
   run_training(
     model_name=args.model,
-    loader_type=args.loader,
     epochs=args.epochs,
     lr=args.lr,
     optimizer_name=args.optimizer,
