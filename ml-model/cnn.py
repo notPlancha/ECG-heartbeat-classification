@@ -1,4 +1,3 @@
-python
 from data_loader import load_training_data, load_testing_data
 
 import torch
