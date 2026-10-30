@@ -7,6 +7,7 @@ preprocessed .npz splits.
 
 import argparse
 import os
+import re
 import sys
 from pathlib import Path
 from typing import Any
@@ -23,8 +24,21 @@ if str(PROJECT_ROOT) not in sys.path:
   sys.path.insert(0, str(PROJECT_ROOT))
 
 from src.constants import CLASS_NAMES, NUM_CLASSES, WINDOW_SIZE
+
+
+def to_snake_case(name: str) -> str:
+  """Convert CamelCase class name to snake_case."""
+  s = re.sub(r"(.)([A-Z][a-z]+)", r"\1_\2", name)
+  return re.sub(r"([a-z0-9])([A-Z])", r"\1_\2", s).lower()
+
+
 from src.dataset import ECGDataset, get_data_loader
-from src.model import MODELS, get_model
+from src.model import (
+  MODELS,
+  ClassicalECGModel,
+  NeuralECGModel,
+  get_model,
+)
 
 
 def compute_metrics(
@@ -195,7 +209,7 @@ def train_one_epoch(
 
 
 @torch.no_grad()
-def evaluate(
+def evaluate_neural(
   model: nn.Module,
   loader: DataLoader,
   criterion: nn.Module,
@@ -203,7 +217,7 @@ def evaluate(
   num_classes: int = NUM_CLASSES,
 ) -> tuple[float, dict[str, float | list[float]]]:
   """
-  Evaluate model on a dataset and return loss and classification metrics.
+  Evaluate neural model on a dataset and return loss and classification metrics.
   """
   model.eval()
   total_loss = 0.0
@@ -234,19 +248,15 @@ def evaluate(
   return avg_loss, metrics
 
 
-def train_random_forest(
+def train_classical_model(
+  model: ClassicalECGModel,
   train_path: str = "dataset/processed/train.npz",
   val_path: str = "dataset/processed/val.npz",
-  n_estimators: int = 100,
-  max_depth: int | None = 20,
-  min_samples_leaf: int = 2,
-  class_weight: str | None = "balanced",
-  random_state: int = 42,
   quick_test: bool = False,
-  save_path: str = "results/random_forest.joblib",
+  save_path: str = "results/classical_model.joblib",
 ) -> None:
   """
-  Train a Random Forest classifier using preprocessed .npz splits.
+  Train any classical (non-neural) model adhering to ClassicalECGModel.
   """
   if not os.path.exists(train_path):
     raise FileNotFoundError(f"Training file '{train_path}' not found.")
@@ -272,28 +282,7 @@ def train_random_forest(
   print(f"Train class distribution: {train_ds.get_class_counts()}")
   print(f"Val class distribution:   {val_ds.get_class_counts()}")
 
-  _, weights_np, rf_param = resolve_class_weights(train_ds, class_weight)
-
-  model = get_model(
-    "RandomForest",
-    n_estimators=n_estimators,
-    max_depth=max_depth,
-    min_samples_leaf=min_samples_leaf,
-    class_weight=rf_param,
-    random_state=random_state,
-  )
-
-  weight_desc = (
-    rf_param
-    if isinstance(rf_param, str)
-    else (
-      [round(float(w), 4) for w in weights_np] if weights_np is not None else "None"
-    )
-  )
-  print(
-    f"Training Random Forest (n_estimators={n_estimators}, max_depth={max_depth}, "
-    f"class_weight={weight_desc})..."
-  )
+  print(f"Fitting model: {type(model).__name__}...")
   model.fit(X_train, y_train)
 
   val_preds = model.predict(X_val)
@@ -316,11 +305,13 @@ def train_random_forest(
 
   os.makedirs(os.path.dirname(save_path), exist_ok=True)
   joblib.dump(model, save_path)
-  print(f"Saved trained Random Forest model to: {save_path}")
+  print(f"Saved trained classical model to: {save_path}")
 
 
-def run_training(
-  model_name: str = "LogisticRegression",
+def train_neural_model(
+  model: NeuralECGModel,
+  train_path: str = "dataset/processed/train.npz",
+  val_path: str = "dataset/processed/val.npz",
   epochs: int = 15,
   lr: float = 0.01,
   optimizer_name: str = "sgd",
@@ -328,30 +319,18 @@ def run_training(
   augment: bool = False,
   balanced_sampling: bool = False,
   quick_test: bool = False,
-  save_path: str = "results/best_model.pt",
-  n_estimators: int = 100,
-  max_depth: int | None = 20,
   class_weight: str | None = "balanced",
+  save_path: str = "results/best_model.pt",
 ) -> None:
   """
-  Dispatch training to neural or classical pipeline based on model name.
+  Train any neural network adhering to NeuralECGModel.
   """
-  if model_name.lower() in ("randomforest", "rf"):
-    if save_path in ("results/best_model.pt", "results/logistic_regression.pt"):
-      save_path = "results/random_forest.joblib"
-    train_random_forest(
-      n_estimators=n_estimators,
-      max_depth=max_depth,
-      class_weight=class_weight,
-      quick_test=quick_test,
-      save_path=save_path,
-    )
-    return
-
   device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
   print(f"Using device: {device}")
 
   train_loader, val_loader, class_weights = load_data(
+    train_path=train_path,
+    val_path=val_path,
     batch_size=batch_size,
     augment=augment,
     balanced_sampling=balanced_sampling,
@@ -359,7 +338,6 @@ def run_training(
     class_weight=class_weight,
   )
 
-  model = get_model(model_name, input_dim=WINDOW_SIZE, num_classes=NUM_CLASSES)
   model = model.to(device)
 
   if class_weights is not None:
@@ -373,7 +351,7 @@ def run_training(
   else:
     raise ValueError(f"Unsupported optimizer: '{optimizer_name}'")
 
-  param_count = sum(p.numel() for p in model.parameters())
+  param_count = model.count_parameters()
   print(f"Model: {type(model).__name__} ({param_count} parameters)")
   if class_weights is not None:
     print(
@@ -390,7 +368,7 @@ def run_training(
     train_loss, train_acc = train_one_epoch(
       model, train_loader, criterion, optimizer, device
     )
-    val_loss, val_metrics = evaluate(model, val_loader, criterion, device)
+    val_loss, val_metrics = evaluate_neural(model, val_loader, criterion, device)
 
     val_acc = val_metrics["accuracy"]
     val_f1 = val_metrics["macro_f1"]
@@ -436,6 +414,62 @@ def run_training(
       strict=False,
     ):
       print(f"  Class {name}: F1={f1:.4f} | Recall={rec:.4f} | Precision={prec:.4f}")
+
+
+def run_training(
+  model_name: str = "LogisticRegression",
+  epochs: int = 15,
+  lr: float = 0.01,
+  optimizer_name: str = "sgd",
+  batch_size: int = 64,
+  augment: bool = False,
+  balanced_sampling: bool = False,
+  quick_test: bool = False,
+  save_path: str | None = None,
+  n_estimators: int = 100,
+  max_depth: int | None = 20,
+  class_weight: str | None = "balanced",
+) -> None:
+  """
+  Instantiate model and dispatch to classical or neural pipeline via base class check.
+  """
+  model = get_model(
+    model_name,
+    input_dim=WINDOW_SIZE,
+    num_classes=NUM_CLASSES,
+    n_estimators=n_estimators,
+    max_depth=max_depth,
+    class_weight=class_weight,
+  )
+
+  slug = to_snake_case(type(model).__name__)
+  if isinstance(model, ClassicalECGModel):
+    if save_path is None or save_path == "results/best_model.pt":
+      save_path = f"results/{slug}.joblib"
+    train_classical_model(
+      model=model,
+      quick_test=quick_test,
+      save_path=save_path,
+    )
+  elif isinstance(model, NeuralECGModel):
+    if save_path is None or save_path == "results/best_model.pt":
+      save_path = f"results/{slug}.pt"
+    train_neural_model(
+      model=model,
+      epochs=epochs,
+      lr=lr,
+      optimizer_name=optimizer_name,
+      batch_size=batch_size,
+      augment=augment,
+      balanced_sampling=balanced_sampling,
+      quick_test=quick_test,
+      class_weight=class_weight,
+      save_path=save_path,
+    )
+  else:
+    raise TypeError(
+      f"Model '{type(model).__name__}' does not inherit from BaseECGModel."
+    )
 
 
 def main() -> None:
@@ -492,7 +526,7 @@ def main() -> None:
   parser.add_argument(
     "--save-path",
     type=str,
-    default="results/best_model.pt",
+    default=None,
     help="File path to save the best model weights.",
   )
   parser.add_argument(
@@ -513,7 +547,7 @@ def main() -> None:
     default="balanced",
     help=(
       "Class weighting strategy across all models: "
-      "'balanced' (inverse frequency), 'sqrt_inverse', 'effective', 'none', "
+      "'balanced', 'sqrt_inverse', 'effective', 'none', "
       "or comma-separated values (e.g. '1.0,10.0,5.0,20.0'). Default: balanced."
     ),
   )

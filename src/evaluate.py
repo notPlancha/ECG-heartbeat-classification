@@ -7,9 +7,9 @@ on held-out test data (DS2) using scikit-learn metrics.
 
 import argparse
 import os
+import re
 import sys
 from pathlib import Path
-from typing import Any
 
 import joblib
 import matplotlib.pyplot as plt
@@ -23,6 +23,7 @@ from sklearn.metrics import (
   confusion_matrix,
   precision_recall_fscore_support,
 )
+from torch import nn
 from torch.utils.data import DataLoader
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
@@ -31,7 +32,19 @@ if str(PROJECT_ROOT) not in sys.path:
 
 from src.constants import CLASS_NAMES, NUM_CLASSES, WINDOW_SIZE
 from src.dataset import ECGDataset, get_data_loader
-from src.model import MODELS, BaseECGModel, get_model
+from src.model import (
+  MODELS,
+  BaseECGModel,
+  ClassicalECGModel,
+  NeuralECGModel,
+  get_model,
+)
+
+
+def to_snake_case(name: str) -> str:
+  """Convert CamelCase class name to snake_case."""
+  s = re.sub(r"(.)([A-Z][a-z]+)", r"\1_\2", name)
+  return re.sub(r"([a-z0-9])([A-Z])", r"\1_\2", s).lower()
 
 
 def compute_evaluation_metrics(
@@ -124,20 +137,20 @@ def plot_confusion_matrix(
 
 @torch.no_grad()
 def run_inference(
-  model: Any,
+  model: BaseECGModel,
   loader: DataLoader,
   device: torch.device,
 ) -> tuple[np.ndarray, np.ndarray]:
   """
   Run model inference across a data loader and return predictions and ground truth.
   """
-  if hasattr(model, "eval"):
+  if isinstance(model, nn.Module):
     model.eval()
   all_preds = []
   all_targets = []
 
   for beats, labels in loader:
-    if isinstance(model, torch.nn.Module):
+    if isinstance(model, nn.Module):
       beats = beats.to(device)
     preds = model.predict(beats)
 
@@ -151,9 +164,9 @@ def run_inference(
   return y_true, y_pred
 
 
-def load_checkpoint(model: BaseECGModel, checkpoint_path: str) -> None:
+def load_checkpoint(model: NeuralECGModel, checkpoint_path: str) -> None:
   """
-  Load weights into model from a checkpoint dictionary or state dict.
+  Load weights into neural model from a checkpoint dictionary or state dict.
   """
   if not os.path.exists(checkpoint_path):
     raise FileNotFoundError(f"Checkpoint '{checkpoint_path}' not found.")
@@ -192,30 +205,30 @@ def evaluate_model(
   print(f"Loaded {len(test_ds)} test heartbeats.")
   print(f"Class distribution: {test_ds.get_class_counts()}")
 
+  model = get_model(model_name, input_dim=WINDOW_SIZE, num_classes=NUM_CLASSES)
+
+  slug = to_snake_case(type(model).__name__)
   if checkpoint_path is None:
-    if model_name.lower() in ("randomforest", "rf"):
-      checkpoint_path = "results/random_forest.joblib"
+    if isinstance(model, ClassicalECGModel):
+      checkpoint_path = f"results/{slug}.joblib"
     else:
-      checkpoint_path = "results/logistic_regression.pt"
+      checkpoint_path = f"results/{slug}.pt"
 
   if not os.path.exists(checkpoint_path):
     raise FileNotFoundError(f"Checkpoint file not found: {checkpoint_path}")
 
-  if model_name.lower() in ("randomforest", "rf") or checkpoint_path.endswith(
-    ".joblib"
-  ):
-    print(f"Loading Random Forest model from {checkpoint_path}...")
+  if isinstance(model, ClassicalECGModel):
+    print(f"Loading classical model from {checkpoint_path}...")
     model = joblib.load(checkpoint_path)
-    num_params = model.count_parameters()
-    print(f"Loaded Random Forest ({num_params} total tree nodes).")
-  else:
-    model = get_model(model_name, input_dim=WINDOW_SIZE, num_classes=NUM_CLASSES)
+  elif isinstance(model, NeuralECGModel):
+    print(f"Loading neural model from {checkpoint_path}...")
     load_checkpoint(model, checkpoint_path)
     model = model.to(device)
-    num_params = sum(p.numel() for p in model.parameters())
-    print(f"Loaded model '{type(model).__name__}' ({num_params} parameters).")
 
+  num_params = model.count_parameters()
+  print(f"Loaded model '{type(model).__name__}' ({num_params} parameters / nodes).")
   print("Running test set inference...")
+
   y_true, y_pred = run_inference(model, test_loader, device)
   results = compute_evaluation_metrics(y_true, y_pred)
 
@@ -240,7 +253,7 @@ def evaluate_model(
 
   os.makedirs(output_dir, exist_ok=True)
   model_tag = type(model).__name__
-  slug = model_tag.lower().replace("-", "_")
+  slug = to_snake_case(model_tag)
 
   row_data = {
     "Model": model_tag,
