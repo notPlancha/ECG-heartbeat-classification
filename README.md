@@ -82,6 +82,18 @@ just prepare-data
 uv run python src/prepare_data.py
 ```
 
+### Export the logistic-regression model as INT8
+Run the logistic-regression training script to write the quantized model to
+`ml-model/logistic_regression_int8.npz`. The export uses the preprocessing
+pipeline's clipped input range (`[-3, 3]`), per-output-channel INT8 weights,
+INT32 biases, and records the quantization scales alongside them. The script
+prints the compressed artifact size, parameter storage comparison, test
+prediction agreement, and INT8 test macro F1 after export.
+
+```powershell
+uv run python ml-model/logistic_reg.py
+```
+
 ### 3. Run the CRISP-DM Submission 1 Notebooks
 ```powershell
 # Re-execute all three notebooks in place:
