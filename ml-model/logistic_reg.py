@@ -1,13 +1,10 @@
 
-from pathlib import Path
-
 from data_loader import (
     load_training_data,
     load_validation_data,
     load_testing_data,
 )
-from class_weighting import calculate_class_weights
-from int8_export import export_int8_linear, predict_int8_linear
+from int8_export import quantize_linear_parameters, predict_int8_linear
 
 import torch
 from torch.utils.data import (
@@ -18,13 +15,6 @@ from torch.utils.data import (
 import torch.nn as nn
 import numpy as np
 import matplotlib.pyplot as plt
-
-from sklearn.metrics import (
-    classification_report,
-    confusion_matrix,
-    ConfusionMatrixDisplay,
-    f1_score
-)
 
 heartbeats_training, annotations_training = load_training_data()
 heartbeats_validation, annotations_validation = load_validation_data()
@@ -200,9 +190,6 @@ with torch.no_grad():
         all_predictions.extend(predictions.cpu().tolist())
         all_labels.extend(labels.cpu().tolist())
 
-# Class names corresponding to labels 0, 1, 2 and 3
-class_labels = [0, 1, 2, 3]
-
 class_names = [
     "N - Normal",
     "S - Supraventricular",
@@ -210,90 +197,197 @@ class_names = [
     "F - Fusion"
 ]
 
-print("\nClassification Report:")
 
-print(
-    classification_report(
-        all_labels,
-        all_predictions,
-        labels=class_labels,
-        target_names=class_names,
-        digits=4,
-        zero_division=0
+def calculate_metrics(labels, predictions):
+    labels = np.asarray(labels, dtype=np.int64)
+    predictions = np.asarray(predictions, dtype=np.int64)
+    if labels.size == 0:
+        raise ValueError("Cannot calculate test metrics for an empty test set.")
+    if labels.shape != predictions.shape:
+        raise ValueError("Labels and predictions must have the same shape.")
+    if (
+        np.any((labels < 0) | (labels >= num_classes))
+        or np.any((predictions < 0) | (predictions >= num_classes))
+    ):
+        raise ValueError(
+            f"Labels and predictions must be in [0, {num_classes - 1}]."
+        )
+
+    cm = np.zeros((num_classes, num_classes), dtype=np.int64)
+    np.add.at(cm, (labels, predictions), 1)
+
+    true_positives = np.diag(cm)
+    actual_counts = cm.sum(axis=1)
+    predicted_counts = cm.sum(axis=0)
+    precision = np.divide(
+        true_positives,
+        predicted_counts,
+        out=np.zeros(num_classes, dtype=np.float64),
+        where=predicted_counts != 0,
     )
-)
+    recall = np.divide(
+        true_positives,
+        actual_counts,
+        out=np.zeros(num_classes, dtype=np.float64),
+        where=actual_counts != 0,
+    )
+    f1 = np.divide(
+        2 * precision * recall,
+        precision + recall,
+        out=np.zeros(num_classes, dtype=np.float64),
+        where=(precision + recall) != 0,
+    )
 
-macro_f1 = f1_score(
-    all_labels,
-    all_predictions,
-    labels=class_labels,
-    average="macro",
-    zero_division=0
-)
-
-print(f"Macro F1-score: {macro_f1:.4f}")
-
-cm = confusion_matrix(
-    all_labels,
-    all_predictions,
-    labels=class_labels
-)
-
-print("\nConfusion Matrix:")
-print(cm)
-
-ConfusionMatrixDisplay(
-    confusion_matrix=cm,
-    display_labels=class_names
-).plot(
-    cmap="Blues",
-    xticks_rotation=35,
-    values_format="d"
-)
-
-plt.title("Logistic Regression - Confusion Matrix with Oversampling")
-plt.tight_layout()
-plt.show()
+    accuracy = float(true_positives.sum() / labels.size)
+    return cm, accuracy, precision, recall, f1
 
 
-# ============================================================
-# Export and evaluate the INT8 linear model
-# ============================================================
+def print_metrics(model_name, labels, predictions):
+    cm, accuracy, precision, recall, f1 = calculate_metrics(
+        labels, predictions
+    )
+    print(f"\n{model_name} test metrics:")
+    print(f"Accuracy: {accuracy:.4f}")
+    macro_f1 = float(f1.mean())
+    print(f"Macro F1-score: {macro_f1:.4f}")
+    print("\nPer-class metrics:")
+    print(
+        f"{'Class':<24} {'Precision':>10} "
+        f"{'Recall/Sensitivity':>20} {'F1-score':>10}"
+    )
+    for name, class_precision, class_recall, class_f1 in zip(
+        class_names, precision, recall, f1
+    ):
+        print(
+            f"{name:<24} {class_precision:>10.4f} "
+            f"{class_recall:>20.4f} {class_f1:>10.4f}"
+        )
+    print("Confusion matrix:")
+    print(cm)
+    return cm, accuracy, macro_f1
 
-int8_model_path = Path(__file__).with_name("logistic_regression_int8.npz")
-quantized_model, int8_file_size = export_int8_linear(
+
+def predict_fp32_edge(inputs):
+    """Run the FP32 linear layer through a NumPy edge-style inference path."""
+    weights = regression.weight.detach().cpu().numpy()
+    bias = regression.bias.detach().cpu().numpy()
+    return np.asarray(inputs, dtype=np.float32) @ weights.T + bias
+
+
+test_signals = heartbeats_testing.numpy()
+quantized_model = quantize_linear_parameters(
     weights=regression.weight.detach().cpu().numpy(),
     bias=regression.bias.detach().cpu().numpy(),
-    output_path=int8_model_path,
     input_range=(-3.0, 3.0),
 )
 
-int8_logits = predict_int8_linear(
-    heartbeats_testing.numpy(),
-    quantized_model,
+
+def report_model_metrics(condition, labels, predictions_by_model):
+    metrics_by_model = {}
+    for model_name, predictions in predictions_by_model.items():
+        _, accuracy, _, _, f1 = calculate_metrics(labels, predictions)
+        macro_f1 = float(f1.mean())
+        metrics_by_model[model_name] = (accuracy, macro_f1)
+    print(
+        f"{condition:<12}"
+        + "".join(
+            f"{accuracy:>13.4f}{macro_f1:>13.4f}"
+            for accuracy, macro_f1 in metrics_by_model.values()
+        )
+    )
+    return metrics_by_model
+
+
+baseline_predictions = np.asarray(all_predictions, dtype=np.int64)
+fp32_edge_predictions = predict_fp32_edge(test_signals).argmax(axis=1)
+int8_predictions = predict_int8_linear(
+    test_signals, quantized_model
+).argmax(axis=1)
+
+print("\nClean test-set metrics:")
+test_cm, _, baseline_macro_f1 = print_metrics(
+    "Baseline (PyTorch FP32)", all_labels, baseline_predictions
 )
-int8_predictions = int8_logits.argmax(axis=1)
-int8_macro_f1 = f1_score(
-    all_labels,
-    int8_predictions,
-    labels=class_labels,
-    average="macro",
-    zero_division=0,
+_, _, fp32_edge_macro_f1 = print_metrics(
+    "FP32 edge-style (NumPy)", all_labels, fp32_edge_predictions
 )
-prediction_agreement = np.mean(
-    np.asarray(all_predictions) == int8_predictions
-)
-fp32_parameter_size = (
-    regression.weight.numel() + regression.bias.numel()
-) * regression.weight.element_size()
-int8_parameter_size = sum(
-    array.nbytes for array in quantized_model.values()
+_, _, int8_macro_f1 = print_metrics(
+    "Quantized (INT8)", all_labels, int8_predictions
 )
 
-print("\nINT8 export:")
-print(f"Model file: {int8_model_path}")
-print(f"Compressed artifact size: {int8_file_size:,} bytes")
-print(f"INT8 model parameter and scale size: {int8_parameter_size:,} bytes")
-print(f"FP32 model parameter size: {fp32_parameter_size:,} bytes")
-print(f"Test prediction agreement with FP32: {prediction_agreement:.4%}")
-print(f"INT8 test macro F1-score: {int8_macro_f1:.4f}")
+print("\nClean macro F1 comparison:")
+print(f"Baseline (PyTorch FP32): {baseline_macro_f1:.4f}")
+print(f"FP32 edge-style (NumPy): {fp32_edge_macro_f1:.4f}")
+print(f"Quantized (INT8):        {int8_macro_f1:.4f}")
+
+model_names = (
+    "Baseline",
+    "FP32 Edge",
+    "INT8",
+)
+print("\nAccuracy and macro F1 by noise level:")
+print(
+    f"{'Condition':<12}"
+    + "".join(f"{name + ' Acc':>13}{name + ' F1':>13}" for name in model_names)
+)
+report_model_metrics(
+    "Clean",
+    all_labels,
+    {
+        "Baseline": baseline_predictions,
+        "FP32 Edge": fp32_edge_predictions,
+        "INT8": int8_predictions,
+    },
+)
+
+rng = np.random.default_rng(seed=42)
+standard_noise = rng.normal(size=test_signals.shape).astype(np.float32)
+signal_power = np.mean(np.square(test_signals), axis=1, keepdims=True)
+noise_power = np.mean(np.square(standard_noise), axis=1, keepdims=True)
+
+for snr_db in (12, 6, 0):
+    target_noise_power = signal_power / (10 ** (snr_db / 10))
+    noisy_signals = test_signals + standard_noise * np.sqrt(
+        target_noise_power / noise_power
+    )
+    with torch.no_grad():
+        baseline_noisy_predictions = regression(
+            torch.from_numpy(noisy_signals)
+        ).argmax(dim=1).cpu().numpy()
+    fp32_edge_noisy_predictions = predict_fp32_edge(
+        noisy_signals
+    ).argmax(axis=1)
+    int8_noisy_predictions = predict_int8_linear(
+        noisy_signals, quantized_model
+    ).argmax(axis=1)
+    report_model_metrics(
+        f"{snr_db} dB",
+        all_labels,
+        {
+            "Baseline": baseline_noisy_predictions,
+            "FP32 Edge": fp32_edge_noisy_predictions,
+            "INT8": int8_noisy_predictions,
+        },
+    )
+
+plt.imshow(test_cm, interpolation="nearest", cmap="Blues")
+plt.colorbar()
+tick_marks = np.arange(len(class_names))
+plt.xticks(tick_marks, class_names, rotation=35, ha="right")
+plt.yticks(tick_marks, class_names)
+threshold = test_cm.max() / 2
+for row in range(test_cm.shape[0]):
+    for column in range(test_cm.shape[1]):
+        plt.text(
+            column,
+            row,
+            f"{test_cm[row, column]:d}",
+            ha="center",
+            va="center",
+            color="white" if test_cm[row, column] > threshold else "black",
+        )
+plt.ylabel("True label")
+plt.xlabel("Predicted label")
+plt.title("Baseline Logistic Regression - Test Confusion Matrix")
+plt.tight_layout()
+plt.show()

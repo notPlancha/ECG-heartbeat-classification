@@ -82,17 +82,21 @@ just prepare-data
 uv run python src/prepare_data.py
 ```
 
-### Export the logistic-regression model as INT8
-Run the logistic-regression training script to write the quantized model to
-`ml-model/logistic_regression_int8.npz`. The export uses the preprocessing
-pipeline's clipped input range (`[-3, 3]`), per-output-channel INT8 weights,
-INT32 biases, and records the quantization scales alongside them. The script
-prints the compressed artifact size, parameter storage comparison, test
-prediction agreement, and INT8 test macro F1 after export.
+### Evaluate logistic regression and noise robustness
+Run the logistic-regression training script to compare the PyTorch FP32
+baseline, an FP32 NumPy edge-style inference path, and INT8 inference. It
+reports clean-test metrics and accuracy/macro F1 at 12, 6, and 0 dB SNR, using
+the same reproducible noise for all three paths. INT8 inference is performed
+in memory; no model artifact is exported. The NumPy FP32 path is a software
+reference, not execution on the MAX78002 hardware.
 
 ```powershell
 uv run python ml-model/logistic_reg.py
 ```
+
+For an interactive, stage-by-stage analysis of baseline FP32, an FP32
+software reference, and INT8 under clean, 12 dB, 6 dB, and 0 dB conditions,
+open [the logistic-regression noise robustness notebook](notebooks/logistic_regression_noise_robustness.ipynb).
 
 ### 3. Run the CRISP-DM Submission 1 Notebooks
 ```powershell
