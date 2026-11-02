@@ -1,4 +1,4 @@
-from data_loader import load_training_data, load_testing_data
+from new_loader import load_training_data, load_testing_data
 
 import numpy as np
 import matplotlib.pyplot as plt
