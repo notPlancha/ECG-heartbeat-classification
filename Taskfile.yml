@@ -113,6 +113,21 @@ tasks:
     cmds:
       - uv run python src/evaluate.py --run latest {{.CLI_ARGS}}
 
+  noise-test:
+    desc: 'Run noise robustness evaluation (usage: task noise-test -- --model CNN)'
+    cmds:
+      - uv run python src/noise_test.py {{.CLI_ARGS}}
+
+  noise-test-cnn:
+    desc: 'Run noise robustness test on CNN at 12dB, 6dB, 0dB'
+    cmds:
+      - uv run python src/noise_test.py --model CNN --snr 12 6 0 {{.CLI_ARGS}}
+
+  noise-test-all:
+    desc: 'Run noise robustness benchmark across all models (Baseline, RF, CNN)'
+    cmds:
+      - uv run python src/noise_test.py --model all --snr 12 6 0 {{.CLI_ARGS}}
+
   purge:
     desc: 'Purge model checkpoints (usage: task purge), or purge all runs (usage: task purge -- all)'
     cmds:
