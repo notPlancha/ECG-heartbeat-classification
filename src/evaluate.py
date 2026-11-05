@@ -226,12 +226,6 @@ def evaluate_model(
   set_seed(seed)
 
   run_dir = resolve_run_dir(run, must_exist=True) if run else None
-  if run_dir is None and checkpoint_path is None:
-    runs_dir = here("results", "runs")
-    if runs_dir.exists() and any(
-      p.is_dir() and p.name.startswith("run") for p in runs_dir.iterdir()
-    ):
-      run_dir = resolve_run_dir("latest", must_exist=True)
 
   if run_dir is not None:
     results_dir = run_dir
@@ -307,6 +301,12 @@ def evaluate_model(
         cand = Path(results_dir) / f"{slug}.pt"
         if cand.exists():
           checkpoint_path = str(cand)
+        elif here("results", f"{slug}.pt").exists():
+          checkpoint_path = str(here("results", f"{slug}.pt"))
+        elif slug == "cnn" and here("best_cnn_model.pth").exists():
+          checkpoint_path = str(here("best_cnn_model.pth"))
+        elif slug == "cnn" and (Path(results_dir) / "best_cnn_model.pth").exists():
+          checkpoint_path = str(Path(results_dir) / "best_cnn_model.pth")
         else:
           checkpoint_path = str(here("results", f"{slug}.pt"))
       case _:

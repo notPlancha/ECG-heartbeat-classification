@@ -88,7 +88,7 @@
   
   This technical report documents an ECG heartbeat classification system designed for the Analog Devices MAX78002 microcontroller. Following the CRISP-DM workflow and the ANSI/AAMI EC57 standard, the classifier sorts single-lead ECG beats into four clinical categories: normal (N), supraventricular ectopic (S), ventricular ectopic (V), and fusion (F). To prevent data leakage, we split the 44 evaluated MIT-BIH recordings by patient: 22 records in the DS1 development set and 22 records in the held-out DS2 test set, yielding 100,679 annotated beats.
   
-  We implemented a 3-layer 1D Convolutional Neural Network with 17,092 parameters, sized specifically for the MAX78002 hardware accelerator. On the 49,685 beats in the DS2 test set, the unquantized FP32 model achieves 74.20% accuracy, a Macro F1 of 0.3230, and 85.22% recall on ventricular ectopic beats. Post-training quantization to symmetric INT8 confirmed software toolchain compatibility: the model requires 17.44 KB of weight memory (0.83% of the 2.0 MB CRAM) and 4.0 KB of activation SRAM (0.78% of 512 KB). At a 50 MHz clock speed, the estimated execution time is 0.234 ms per beat (749,568 MACs) with an estimated energy draw of 1.17 $mu$J. Testing against the MIT-BIH Noise Stress Test Database showed that a 0.5 to 40 Hz Butterworth bandpass filter reduces respiratory baseline wander by 14.93 dB, preventing signal saturation under motion artifacts.
+  We implemented a 3-layer 1D Convolutional Neural Network with 17,092 parameters, sized specifically for the MAX78002 hardware accelerator. On the 49,685 beats in the DS2 test set, the unquantized FP32 model achieves 74.20% accuracy, a Macro F1 of 0.3230, and 87.58% recall on ventricular ectopic beats. Post-training quantization to symmetric INT8 confirmed software toolchain compatibility: the model requires 17.44 KB of weight memory (0.83% of the 2.0 MB CRAM) and 4.0 KB of activation SRAM (0.78% of 512 KB). At a 50 MHz clock speed, the estimated execution time is 0.234 ms per beat (749,568 MACs) with an estimated energy draw of 1.17 $mu$J. Testing against the MIT-BIH Noise Stress Test Database showed that a 0.5 to 40 Hz Butterworth bandpass filter reduces respiratory baseline wander by 14.93 dB, preventing signal saturation under motion artifacts.
 ]
 
 #v(6pt)
@@ -353,11 +353,11 @@ Per-class metrics for the FP32 1D CNN on the 49,685 held-out DS2 beats:
   columns: (1fr, 1.2fr, 1.2fr, 1.2fr, 1.2fr, 1.2fr),
   align: (left, right, right, right, right, right),
   table.header([Class], [Precision], [Sensitivity / Recall], [Specificity], [F1-Score], [Support (DS2)]),
-  [Class N], [94.63%], [78.02%], [64.02%], [85.52%], [44,240],
-  [Class S], [3.64%], [10.78%], [89.05%], [5.44%], [1,837],
-  [Class V], [46.63%], [85.22%], [93.24%], [60.28%], [3,220],
-  [Class F], [0.58%], [2.84%], [96.19%], [0.97%], [388],
-  [*Macro Average*], [*36.37%*], [*44.21%*], [*85.63%*], [*38.05%*], [*49,685*]
+  [Class N], [94.34%], [76.82%], [62.57%], [84.68%], [44,240],
+  [Class S], [2.49%], [3.32%], [95.01%], [2.85%], [1,837],
+  [Class V], [27.19%], [87.58%], [83.75%], [41.50%], [3,220],
+  [Class F], [0.12%], [0.26%], [98.28%], [0.16%], [388],
+  [*Macro Average*], [*31.04%*], [*41.99%*], [*84.90%*], [*32.30%*], [*49,685*]
 )
 
 #grid(
@@ -374,9 +374,9 @@ Per-class metrics for the FP32 1D CNN on the 49,685 held-out DS2 beats:
 )
 
 *Class difficulty analysis*:
-- Class V (Ventricular ectopic): The model achieves 85.22% sensitivity and an F1 of 0.6028. Ventricular beats exhibit distinct, wide QRS shapes that spatial convolutional filters detect reliably across patients.
-- Class S (Supraventricular ectopic): Achieves an F1 of only 5.44%. S beats originate above the ventricles and follow normal conduction pathways, producing a QRS shape nearly identical to normal beats. Clinicians identify S beats by premature arrival time (shortened RR interval), not shape. Operating on single 256-sample segments without RR context limits performance on this class.
-- Class F (Fusion): Low performance ($"F1" = 0.97%$) stems from sample rarity (388 test beats) and variable hybrid shapes blending N and V morphologies.
+- Class V (Ventricular ectopic): The model achieves 87.58% sensitivity and an F1 of 0.4150. Ventricular beats exhibit distinct, wide QRS shapes that spatial convolutional filters detect reliably across patients.
+- Class S (Supraventricular ectopic): Achieves an F1 of only 2.85% and sensitivity of 3.32%. S beats originate above the ventricles and follow normal conduction pathways, producing a QRS shape nearly identical to normal beats. Clinicians identify S beats by premature arrival time (shortened RR interval), not shape. Operating on single 256-sample segments without RR context limits performance on this class.
+- Class F (Fusion): Low performance ($"F1" = 0.16%$) stems from sample rarity (388 test beats) and variable hybrid shapes blending N and V morphologies.
 
 == Quantization Analysis
 $ "FP32 Macro F1": bold(0.3230) wide "INT8 Macro F1": bold(0.2506) wide "Difference": bold(-0.0724) $
@@ -391,10 +391,10 @@ The model was tested against real physiological noise from the MIT-BIH Noise Str
   columns: (1.5fr, 1.5fr, 1.5fr, 2fr),
   align: (left, center, center, left),
   table.header([Condition], [Accuracy], [Macro F1], [Clinical Impact]),
-  [Clean ECG], [74.20%], [0.3230], [Full diagnostic sensitivity; Class V recall = 85.22%],
+  [Clean ECG], [74.20%], [0.3230], [Full diagnostic sensitivity; Class V recall = 87.58%],
   [12 dB SNR (Moderate)], [73.88%], [0.3221], [Negligible drop ($Delta "F1" = -0.0009$)],
   [6 dB SNR (Elevated)], [72.84%], [0.3181], [Minor drop ($Delta "F1" = -0.0049$)],
-  [0 dB SNR (Severe)], [69.77%], [0.2911], [Gradual degradation; Class V recall = 43.57%]
+  [0 dB SNR (Severe)], [69.77%], [0.2911], [Gradual degradation; Class V recall = 70.81%]
 )
 
 *Empirical check on preprocessing*:
@@ -420,7 +420,7 @@ Inspecting specific misclassified beats (@fig-errors) illustrates why errors occ
   align: (left, center, left),
   table.header([Criterion], [Status], [Justification]),
   [Predictive Performance], [*Achieved*], [Test accuracy = 74.20% (target $>70%$); Macro F1 = 0.3230 (target $>0.30$) on held-out DS2.],
-  [Minority-Class Sensitivity], [*Achieved*], [Class V Recall = 85.22% (target $>75.0%$). Non-zero F1 across all four classes on unseen patients.],
+  [Minority-Class Sensitivity], [*Achieved*], [Class V Recall = 87.58% (target $>75.0%$). Non-zero F1 across all four classes on unseen patients.],
   [Noise Robustness], [*Achieved*], [Accuracy dropped by 4.43% at 0 dB SNR (target $<15%$). Butterworth filter attenuated noise by 14.93 dB.],
   [Model Complexity], [*Achieved*], [17,092 parameters (target $<25,000$); 17.44 KB flash (target $<100$ KB); 749,568 MACs (target $<1,000,000$).],
   [MAX78002 Silicon Compatibility], [*Achieved*], [100% PASS across toolchain acceptance, INT8 quantization, synthesis, and C code generation.]
