@@ -46,7 +46,7 @@ from src.constants import (
 )
 from src.dataset import ECGDataset
 from src.evaluate import compute_evaluation_metrics
-from src.model import CNN
+from src.model import CNN, load_trained_model, resolve_checkpoint_path
 
 DEFAULT_QUANT_OUT = Path(here("max78002", "quantization_output"))
 DEFAULT_CNN_PATH = Path(here("best_cnn_model.pth"))
@@ -193,9 +193,7 @@ def quantize_pytorch_cnn(
     """
     Extract FP32 weights from PyTorch state dict and quantize to symmetric INT8 and INT32 biases.
     """
-    cnn = CNN()
-    state_dict = torch.load(str(model_path), map_location="cpu", weights_only=True)
-    cnn.load_state_dict(state_dict)
+    cnn = load_trained_model("CNN", checkpoint_path=model_path, device="cpu")
 
     input_min, input_max = input_range
     input_scale = np.float32(input_max / 127.0)
@@ -293,9 +291,7 @@ def evaluate_quantization(
     print(f"\nLoaded {len(y_test):,} held-out test beats across 4 AAMI classes.")
 
     # 3. Evaluate FP32 PyTorch Model
-    cnn_fp32 = CNN()
-    cnn_fp32.load_state_dict(torch.load(str(model_path), map_location="cpu", weights_only=True))
-    cnn_fp32.eval()
+    cnn_fp32 = load_trained_model("CNN", checkpoint_path=model_path, device="cpu")
 
     with torch.no_grad():
         preds_fp32 = []

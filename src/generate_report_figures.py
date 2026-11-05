@@ -19,7 +19,7 @@ if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
 from src.constants import CLASS_NAMES, SAMPLING_RATE
-from src.model import CNN
+from src.model import CNN, load_trained_model
 
 plt.style.use("seaborn-v0_8-whitegrid")
 plt.rcParams["font.family"] = "sans-serif"
@@ -119,9 +119,7 @@ def generate_error_waveforms_figure(out_path: Path):
     X_test = test_data["X"]
     y_test = test_data["y"]
 
-    model = CNN()
-    model.load_state_dict(torch.load(here("best_cnn_model.pth"), map_location="cpu"))
-    model.eval()
+    model = load_trained_model("CNN", device="cpu")
 
     with torch.no_grad():
         logits = model(torch.tensor(X_test, dtype=torch.float32))

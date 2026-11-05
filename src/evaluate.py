@@ -65,6 +65,9 @@ from src.model import (
   ClassicalECGModel,
   NeuralECGModel,
   get_model,
+  load_trained_model,
+  resolve_checkpoint_path,
+  to_snake_case,
 )
 
 
@@ -287,58 +290,16 @@ def evaluate_model(
   print(f"Loaded {len(test_ds)} test heartbeats.")
   print(f"Class distribution: {test_ds.get_class_counts()}")
 
-  model = get_model(
-    model_name,
-    input_dim=WINDOW_SIZE,
-    num_classes=NUM_CLASSES,
-    random_state=seed,
+  model = load_trained_model(
+    model_name=model_name,
+    checkpoint_path=checkpoint_path,
+    results_dir=results_dir,
+    device=device,
+    seed=seed,
   )
   slug = to_snake_case(type(model).__name__)
-
-  if checkpoint_path is None:
-    match model:
-      case ClassicalECGModel():
-        cand = Path(results_dir) / f"{slug}.joblib"
-        if cand.exists():
-          checkpoint_path = str(cand)
-        else:
-          checkpoint_path = str(here("results", f"{slug}.joblib"))
-      case NeuralECGModel():
-        cand = Path(results_dir) / f"{slug}.pt"
-        if cand.exists():
-          checkpoint_path = str(cand)
-        elif here("results", f"{slug}.pt").exists():
-          checkpoint_path = str(here("results", f"{slug}.pt"))
-        elif slug == "cnn" and here("best_cnn_model.pth").exists():
-          checkpoint_path = str(here("best_cnn_model.pth"))
-        elif slug == "cnn" and (Path(results_dir) / "best_cnn_model.pth").exists():
-          checkpoint_path = str(Path(results_dir) / "best_cnn_model.pth")
-        else:
-          checkpoint_path = str(here("results", f"{slug}.pt"))
-      case _:
-        raise TypeError(f"Unsupported model type: {type(model)}")
-  else:
-    cp = Path(checkpoint_path)
-    if not cp.exists() and here(checkpoint_path).exists():
-      checkpoint_path = str(here(checkpoint_path))
-    else:
-      checkpoint_path = str(cp)
-
-  if not os.path.exists(checkpoint_path):
-    raise FileNotFoundError(
-      f"Checkpoint file not found: {checkpoint_path}. Train the model first."
-    )
-
-  match model:
-    case ClassicalECGModel():
-      print(f"Loading classical model from {checkpoint_path}...")
-      model = joblib.load(checkpoint_path)
-    case NeuralECGModel():
-      print(f"Loading neural model from {checkpoint_path}...")
-      load_checkpoint(model, checkpoint_path)
-      model = model.to(device)
-    case _:
-      raise TypeError(f"Unsupported model type: {type(model)}")
+  checkpoint_path = str(model.checkpoint_path)
+  print(f"Loading {type(model).__name__} from {checkpoint_path}...")
 
   num_params = model.count_parameters()
   print(f"Loaded model '{type(model).__name__}' ({num_params} parameters / nodes).")

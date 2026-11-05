@@ -67,6 +67,9 @@ from src.model import (
     ClassicalECGModel,
     NeuralECGModel,
     get_model,
+    load_trained_model,
+    resolve_checkpoint_path,
+    to_snake_case,
 )
 
 DEFAULT_NSTDB_DIR = Path(here("dataset", "mit-bih-noise-stress-test-database-1.0.0"))
@@ -263,97 +266,11 @@ def evaluate_preprocessing_filtering_benefit(
 
 
 # =====================================================================
-# Model Loading & Checkpoint Resolution
+# Model Loading & Checkpoint Resolution (Delegated to src.model)
 # =====================================================================
 
-
-def resolve_model_checkpoint(
-    model_name: str,
-    checkpoint_path: str | Path | None = None,
-    results_dir: str | Path = DEFAULT_RESULTS_DIR,
-) -> Path:
-    """Find checkpoint file for the specified model in runs, results, or root."""
-    if checkpoint_path is not None:
-        p = Path(checkpoint_path)
-        if p.exists():
-            return p
-        if here(checkpoint_path).exists():
-            return here(checkpoint_path)
-
-    slug = to_snake_case(model_name)
-    res_p = Path(results_dir) if Path(results_dir).is_absolute() else here(results_dir)
-
-    # Check root fallback (e.g. best_cnn_model.pth)
-    if model_name.upper() == "CNN":
-        root_cand = here("best_cnn_model.pth")
-        if root_cand.exists():
-            return root_cand
-
-    # Check results directory
-    candidates = [
-        res_p / f"{slug}.pt",
-        res_p / f"{slug}.pth",
-        res_p / f"{slug}.joblib",
-        here("results", f"{slug}.pt"),
-        here("results", f"{slug}.pth"),
-        here("results", f"{slug}.joblib"),
-    ]
-
-    # Check latest run directory
-    runs_dir = here("results", "runs")
-    if runs_dir.exists():
-        run_folders = sorted(
-            [d for d in runs_dir.iterdir() if d.is_dir() and d.name.startswith("run")],
-            key=lambda x: x.stat().st_mtime,
-            reverse=True,
-        )
-        for rf in run_folders:
-            for f in rf.glob("*.*"):
-                if f.suffix in (".pt", ".pth", ".joblib") and (slug in f.stem.lower() or "best" in f.stem.lower()):
-                    candidates.insert(0, f)
-
-    for cand in candidates:
-        if cand.exists():
-            return cand
-
-    raise FileNotFoundError(
-        f"Could not locate checkpoint for model '{model_name}'. "
-        f"Checked paths: {[str(c) for c in candidates]}"
-    )
-
-
-def load_model_for_testing(
-    model_name: str,
-    checkpoint_path: Path,
-    input_dim: int = WINDOW_SIZE,
-    num_classes: int = NUM_CLASSES,
-    seed: int = DEFAULT_RANDOM_STATE,
-) -> BaseECGModel:
-    """Instantiate model and load weights."""
-    model = get_model(
-        model_name,
-        input_dim=input_dim,
-        num_classes=num_classes,
-        random_state=seed,
-    )
-
-    if isinstance(model, ClassicalECGModel):
-        loaded = joblib.load(checkpoint_path)
-        if hasattr(loaded, "predict"):
-            return loaded
-        model.classifier = loaded
-        return model
-
-    if isinstance(model, NeuralECGModel):
-        ckpt = torch.load(str(checkpoint_path), map_location="cpu", weights_only=False)
-        if isinstance(ckpt, dict) and "model_state_dict" in ckpt:
-            model.load_state_dict(ckpt["model_state_dict"])
-        elif isinstance(ckpt, dict):
-            model.load_state_dict(ckpt)
-        model.eval()
-        return model
-
-    return model
+resolve_model_checkpoint = resolve_checkpoint_path
+load_model_for_testing = load_trained_model
 
 
 # =====================================================================

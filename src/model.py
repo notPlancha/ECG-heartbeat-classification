@@ -5,9 +5,14 @@ Model definitions and base classes for ECG heartbeat classification.
 """
 
 from abc import ABC, abstractmethod
+import os
+from pathlib import Path
+import re
 from typing import Any
 
+import joblib
 import numpy as np
+from pyhere import here
 import torch
 from sklearn.ensemble import RandomForestClassifier
 from torch import nn
@@ -16,6 +21,7 @@ try:
   from src.constants import (
     DEFAULT_CLASS_WEIGHT,
     DEFAULT_RANDOM_STATE,
+    DEFAULT_RESULTS_DIR,
     DEFAULT_RF_MAX_DEPTH,
     DEFAULT_RF_MAX_FEATURES,
     DEFAULT_RF_MIN_SAMPLES_LEAF,
@@ -27,6 +33,7 @@ except ImportError:
   from constants import (
     DEFAULT_CLASS_WEIGHT,
     DEFAULT_RANDOM_STATE,
+    DEFAULT_RESULTS_DIR,
     DEFAULT_RF_MAX_DEPTH,
     DEFAULT_RF_MAX_FEATURES,
     DEFAULT_RF_MIN_SAMPLES_LEAF,
@@ -317,6 +324,188 @@ def get_model(name: str, **kwargs: Any) -> BaseECGModel:
   raise ValueError(f"Unknown model '{name}'. Available models: {valid}")
 
 
+def to_snake_case(name: str) -> str:
+  """Convert CamelCase class name to snake_case."""
+  s = re.sub(r"(.)([A-Z][a-z]+)", r"\1_\2", name)
+  return re.sub(r"([a-z0-9])([A-Z])", r"\1_\2", s).lower()
+
+
+def infer_model_name_from_path(checkpoint_path: str | Path) -> str:
+  """Infer model architecture name from a checkpoint filename or path."""
+  p = str(checkpoint_path).lower()
+  stem = Path(checkpoint_path).stem.lower()
+  if "random_forest" in stem or stem == "rf":
+    return "RandomForest"
+  if "logistic_regression" in stem or stem == "lr":
+    return "LogisticRegression"
+  if "cnn" in stem or "conv" in stem:
+    return "CNN"
+  if "random_forest" in p:
+    return "RandomForest"
+  if "logistic_regression" in p:
+    return "LogisticRegression"
+  if "cnn" in p:
+    return "CNN"
+  raise ValueError(
+    f"Could not infer model architecture from checkpoint path '{checkpoint_path}'. "
+    f"Please pass model_name explicitly."
+  )
+
+
+def resolve_checkpoint_path(
+  model_name: str | None = None,
+  checkpoint_path: str | Path | None = None,
+  results_dir: str | Path = DEFAULT_RESULTS_DIR,
+) -> Path:
+  """
+  Resolve the file path to a model checkpoint on disk.
+
+  Resolution strategy:
+  1. If `checkpoint_path` is explicitly provided:
+     - Check if it exists as an absolute or relative path.
+     - Check if it exists relative to the project root (`pyhere.here()`).
+     - Check if it exists within `results_dir`.
+     - If not found, raise FileNotFoundError.
+  2. If `checkpoint_path` is None:
+     - Check canonical root locations (e.g. `best_cnn_model.pth` for CNN).
+     - Check `results_dir` for `{slug}.pt`, `{slug}.pth`, or `{slug}.joblib`.
+     - Check `results/` for `{slug}.pt`, `{slug}.pth`, or `{slug}.joblib`.
+     - Check recent run directories under `results/runs/` for matching model files.
+     - Return the first existing candidate or raise FileNotFoundError.
+  """
+  if checkpoint_path is not None:
+    p = Path(checkpoint_path)
+    if p.exists():
+      return p.resolve()
+    h = Path(here(checkpoint_path))
+    if h.exists():
+      return h.resolve()
+    res_cand = Path(results_dir) / checkpoint_path
+    if res_cand.exists():
+      return res_cand.resolve()
+    raise FileNotFoundError(f"Checkpoint file '{checkpoint_path}' does not exist.")
+
+  if model_name is None:
+    raise ValueError("Either model_name or checkpoint_path must be specified.")
+
+  norm_name = model_name.lower().replace("_", "").replace("-", "")
+  slug = to_snake_case(model_name)
+  res_p = Path(results_dir) if Path(results_dir).is_absolute() else Path(here(results_dir))
+
+  candidates: list[Path] = []
+
+  # 1. Specialized root aliases (highest priority for CNN)
+  if norm_name in ("cnn", "conv1d", "conv1dnet", "cnn1d"):
+    candidates.append(Path(here("best_cnn_model.pth")))
+    candidates.append(res_p / "best_cnn_model.pth")
+    slug = "cnn"
+
+  # 2. Results directory candidates
+  candidates.extend([
+    res_p / f"{slug}.pt",
+    res_p / f"{slug}.pth",
+    res_p / f"{slug}.joblib",
+    Path(here("results", f"{slug}.pt")),
+    Path(here("results", f"{slug}.pth")),
+    Path(here("results", f"{slug}.joblib")),
+  ])
+
+  # 3. Experiment runs fallback (newest run first)
+  runs_dir = Path(here("results", "runs"))
+  if runs_dir.exists():
+    run_folders = sorted(
+      [d for d in runs_dir.iterdir() if d.is_dir() and d.name.startswith("run")],
+      key=lambda x: x.stat().st_mtime,
+      reverse=True,
+    )
+    for rf in run_folders:
+      for f in rf.glob("*.*"):
+        if f.suffix in (".pt", ".pth", ".joblib") and (
+          slug in f.stem.lower() or (slug == "cnn" and "best" in f.stem.lower())
+        ):
+          candidates.append(f)
+
+  for cand in candidates:
+    if cand.exists():
+      return cand.resolve()
+
+  raise FileNotFoundError(
+    f"Could not locate checkpoint for model '{model_name}'. "
+    f"Checked locations: {[str(c) for c in candidates]}"
+  )
+
+
+def load_trained_model(
+  model_name: str | None = None,
+  checkpoint_path: str | Path | None = None,
+  results_dir: str | Path = DEFAULT_RESULTS_DIR,
+  device: torch.device | str | None = None,
+  input_dim: int = WINDOW_SIZE,
+  num_classes: int = NUM_CLASSES,
+  seed: int = DEFAULT_RANDOM_STATE,
+  **model_kwargs: Any,
+) -> BaseECGModel:
+  """
+  Instantiate and restore a trained ECG model from disk.
+
+  Supports:
+  - Classical scikit-learn models (joblib format).
+  - Neural PyTorch models (both raw state dicts and training checkpoints with 'model_state_dict').
+  - Automatic model name inference from checkpoint path if omitted.
+  - Automatically moves neural models to the requested device and invokes `.eval()`.
+  - Attaches `checkpoint_path` attribute to the returned model instance.
+  """
+  resolved_path = resolve_checkpoint_path(
+    model_name=model_name,
+    checkpoint_path=checkpoint_path,
+    results_dir=results_dir,
+  )
+
+  if model_name is None:
+    model_name = infer_model_name_from_path(resolved_path)
+
+  model = get_model(
+    model_name,
+    input_dim=input_dim,
+    num_classes=num_classes,
+    random_state=seed,
+    **model_kwargs,
+  )
+
+  if isinstance(model, ClassicalECGModel) or resolved_path.suffix == ".joblib":
+    loaded = joblib.load(resolved_path)
+    if isinstance(loaded, BaseECGModel):
+      model = loaded
+    elif hasattr(loaded, "predict"):
+      model.classifier = loaded
+    else:
+      raise ValueError(f"Unrecognized object in classical checkpoint '{resolved_path}': {type(loaded)}")
+    model.checkpoint_path = resolved_path
+    return model
+
+  if isinstance(model, NeuralECGModel):
+    target_device = (
+      torch.device(device)
+      if device is not None
+      else torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    )
+    ckpt = torch.load(str(resolved_path), map_location="cpu", weights_only=False)
+    match ckpt:
+      case {"model_state_dict": state_dict}:
+        model.load_state_dict(state_dict)
+      case dict():
+        model.load_state_dict(ckpt)
+      case _:
+        raise ValueError(f"Unrecognized checkpoint format at '{resolved_path}'")
+
+    model.to(target_device)
+    model.eval()
+    model.checkpoint_path = resolved_path
+    return model
+
+  raise TypeError(f"Unsupported model type: {type(model)}")
+
+
 __all__ = [
   "CNN",
   "MODELS",
@@ -327,4 +516,8 @@ __all__ = [
   "NeuralECGModel",
   "RandomForest",
   "get_model",
+  "infer_model_name_from_path",
+  "load_trained_model",
+  "resolve_checkpoint_path",
+  "to_snake_case",
 ]
