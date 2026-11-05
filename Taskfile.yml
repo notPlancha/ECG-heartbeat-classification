@@ -136,6 +136,11 @@ tasks:
     cmds:
       - uv run python src/synthesize.py {{.CLI_ARGS}}
 
+  report:
+    desc: 'Compile CRISP-DM project report in Typst to report.pdf'
+    cmds:
+      - typst compile report.typ report.pdf
+
   purge:
     desc: 'Purge model checkpoints (usage: task purge), or purge all runs (usage: task purge -- all)'
     cmds:
