@@ -1,0 +1,2 @@
+snr_db,clean_accuracy,clean_macro_f1,unfiltered_accuracy,unfiltered_macro_f1,filtered_accuracy,filtered_macro_f1,attenuation_db
+6.0,0.7419744389654825,0.3229802008921907,0.7863339035926336,0.3548278831998425,0.7273020026164838,0.3173488881585409,2.889390230178833
