@@ -27,17 +27,7 @@ PROJECT_ROOT = here()
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
-from src.constants import (
-    CLASS_NAMES,
-    DEFAULT_CNN_CHANNELS_1,
-    DEFAULT_CNN_CHANNELS_2,
-    DEFAULT_CNN_CHANNELS_3,
-    DEFAULT_CNN_KERNEL_SIZE_1,
-    DEFAULT_CNN_KERNEL_SIZE_2,
-    DEFAULT_CNN_KERNEL_SIZE_3,
-    NUM_CLASSES,
-    WINDOW_SIZE,
-)
+from src.constants import CLASS_NAMES
 
 DEFAULT_QUANT_PATH = Path(here("max78002", "quantization_output", "quantized_cnn.npz"))
 DEFAULT_CONFIG_DIR = Path(here("max78002", "model_configuration"))
@@ -50,7 +40,7 @@ def generate_model_configuration(out_dir: Path) -> Path:
     out_dir.mkdir(parents=True, exist_ok=True)
     yaml_path = out_dir / "cnn_max78002.yaml"
 
-    yaml_content = f"""# Analog Devices MAX78002 CNN Accelerator Configuration
+    yaml_content = """# Analog Devices MAX78002 CNN Accelerator Configuration
 # Model: 1D CNN for ECG Heartbeat Classification (ANSI/AAMI EC57 4-Class)
 # Target Hardware: Analog Devices MAX78002 (Dual Core ARM Cortex-M4 + CNN Accelerator)
 
@@ -68,9 +58,9 @@ layers:
     type: Conv1d
     processors: 0x000000000000000f # 4 processors
     in_channels: 1
-    out_channels: {DEFAULT_CNN_CHANNELS_1}
-    kernel_size: {DEFAULT_CNN_KERNEL_SIZE_1}
-    padding: {DEFAULT_CNN_KERNEL_SIZE_1 // 2}
+    out_channels: 16
+    kernel_size: 5
+    padding: 2
     stride: 1
     activation: ReLU
     pool:
@@ -83,10 +73,10 @@ layers:
     sequence: 1
     type: Conv1d
     processors: 0x00000000000000ff # 8 processors
-    in_channels: {DEFAULT_CNN_CHANNELS_1}
-    out_channels: {DEFAULT_CNN_CHANNELS_2}
-    kernel_size: {DEFAULT_CNN_KERNEL_SIZE_2}
-    padding: {DEFAULT_CNN_KERNEL_SIZE_2 // 2}
+    in_channels: 16
+    out_channels: 32
+    kernel_size: 5
+    padding: 2
     stride: 1
     activation: ReLU
     pool:
@@ -99,10 +89,10 @@ layers:
     sequence: 2
     type: Conv1d
     processors: 0x000000000000ffff # 16 processors
-    in_channels: {DEFAULT_CNN_CHANNELS_2}
-    out_channels: {DEFAULT_CNN_CHANNELS_3}
-    kernel_size: {DEFAULT_CNN_KERNEL_SIZE_3}
-    padding: {DEFAULT_CNN_KERNEL_SIZE_3 // 2}
+    in_channels: 32
+    out_channels: 64
+    kernel_size: 3
+    padding: 1
     stride: 1
     activation: ReLU
     pool:
@@ -115,8 +105,8 @@ layers:
     sequence: 3
     type: Linear
     processors: 0x00000000ffffffff # 32 processors
-    in_features: {DEFAULT_CNN_CHANNELS_3 * (WINDOW_SIZE // 8)} # {DEFAULT_CNN_CHANNELS_3} channels * {WINDOW_SIZE // 8} samples
-    out_features: {NUM_CLASSES}   # Classes: N, S, V, F
+    in_features: 2048 # 64 channels * 32 samples
+    out_features: 4   # Classes: N, S, V, F
     bias: true
     activation: None
 """
@@ -223,7 +213,7 @@ def generate_sample_input_header(test_path: Path, input_scale: float, out_path: 
         "",
         "#include <stdint.h>",
         "",
-        f"#define SAMPLE_INPUT_LENGTH {WINDOW_SIZE}",
+        "#define SAMPLE_INPUT_LENGTH 256",
         f"#define SAMPLE_TRUE_LABEL   {sample_label} // Class '{CLASS_NAMES[sample_label]}'",
         "",
         f"static const int8_t sample_input_int8[{len(sample_int8)}] = {{",
