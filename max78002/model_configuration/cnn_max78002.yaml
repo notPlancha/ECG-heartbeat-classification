@@ -1,0 +1,69 @@
+# Analog Devices MAX78002 CNN Accelerator Configuration
+# Model: 1D CNN for ECG Heartbeat Classification (ANSI/AAMI EC57 4-Class)
+# Target Hardware: Analog Devices MAX78002 (Dual Core ARM Cortex-M4 + CNN Accelerator)
+
+arch: ecg_cnn1d
+dataset: mitbih_aami4
+
+# Device hardware parameters
+device: MAX78002
+clock_source: ISO # 50 MHz Internal Secondary Oscillator
+stream: false     # FIFO streaming vs memory-mapped SRAM loading
+
+layers:
+  - name: conv1d_1
+    sequence: 0
+    type: Conv1d
+    processors: 0x000000000000000f # 4 processors
+    in_channels: 1
+    out_channels: 16
+    kernel_size: 5
+    padding: 2
+    stride: 1
+    activation: ReLU
+    pool:
+      type: Max
+      size: 2
+      stride: 2
+    output_shift: 0
+
+  - name: conv1d_2
+    sequence: 1
+    type: Conv1d
+    processors: 0x00000000000000ff # 8 processors
+    in_channels: 16
+    out_channels: 32
+    kernel_size: 5
+    padding: 2
+    stride: 1
+    activation: ReLU
+    pool:
+      type: Max
+      size: 2
+      stride: 2
+    output_shift: 0
+
+  - name: conv1d_3
+    sequence: 2
+    type: Conv1d
+    processors: 0x000000000000ffff # 16 processors
+    in_channels: 32
+    out_channels: 64
+    kernel_size: 3
+    padding: 1
+    stride: 1
+    activation: ReLU
+    pool:
+      type: Max
+      size: 2
+      stride: 2
+    output_shift: 0
+
+  - name: linear_classifier
+    sequence: 3
+    type: Linear
+    processors: 0x00000000ffffffff # 32 processors
+    in_features: 2048 # 64 channels * 32 samples
+    out_features: 4   # Classes: N, S, V, F
+    bias: true
+    activation: None

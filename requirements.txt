@@ -21,6 +21,8 @@ cffi==2.1.1
     # via soundfile
 charset-normalizer==3.5.1
     # via requests
+cloudpickle==3.1.2
+    # via joblib
 colorama==0.4.6
     # via tqdm
 contourpy==1.4.0
@@ -47,10 +49,16 @@ idna==3.20
     # via
     #   requests
     #   yarl
+imbalanced-learn==0.14.2
+    # via ecg-heartbeat-classification (pyproject.toml)
 jinja2==3.1.6
     # via
     #   nbconvert
     #   torch
+joblib==1.6.0
+    # via
+    #   imbalanced-learn
+    #   scikit-learn
 jsonschema==4.26.0
     # via nbformat
 jsonschema-specifications==2025.9.1
@@ -84,6 +92,8 @@ multidict==6.9.0
     # via
     #   aiohttp
     #   yarl
+narwhals==2.28.0
+    # via scikit-learn
 nbclient==0.11.0
     # via nbconvert
 nbconvert==7.17.1
@@ -97,8 +107,10 @@ networkx==3.7
 numpy==2.5.3
     # via
     #   contourpy
+    #   imbalanced-learn
     #   matplotlib
     #   pandas
+    #   scikit-learn
     #   scipy
     #   seaborn
     #   soundfile
@@ -148,20 +160,34 @@ rpds-py==2026.6.3
     # via
     #   jsonschema
     #   referencing
+scikit-learn==1.9.1
+    # via
+    #   ecg-heartbeat-classification (pyproject.toml)
+    #   imbalanced-learn
+    #   sklearn-compat
 scipy==1.18.1
-    # via wfdb
+    # via
+    #   imbalanced-learn
+    #   scikit-learn
+    #   wfdb
 seaborn==0.13.2
     # via ecg-heartbeat-classification (pyproject.toml)
 setuptools==84.2.1
     # via torch
 six==1.17.0
     # via python-dateutil
+sklearn-compat==0.1.6
+    # via imbalanced-learn
 soundfile==0.14.0
     # via wfdb
 soupsieve==2.9.2
     # via beautifulsoup4
 sympy==1.14.0
     # via torch
+threadpoolctl==3.7.0
+    # via
+    #   imbalanced-learn
+    #   scikit-learn
 tinycss2==1.5.1
     # via bleach
 torch==2.14.1

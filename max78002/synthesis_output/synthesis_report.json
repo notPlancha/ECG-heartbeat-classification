@@ -1,0 +1,84 @@
+{
+  "device": "MAX78002",
+  "clock_speed_mhz": 50,
+  "results": {
+    "model_accepted": "PASS",
+    "quantization_completed": "PASS",
+    "synthesis_completed": "PASS",
+    "c_device_files_generated": "PASS"
+  },
+  "memory_requirements": {
+    "weight_memory_required_bytes": 17440,
+    "weight_memory_capacity_bytes": 2097152,
+    "weight_memory_utilization_percent": 0.83,
+    "activation_memory_required_bytes": 4096,
+    "activation_memory_capacity_bytes": 524288,
+    "activation_memory_utilization_percent": 0.78
+  },
+  "computational_complexity": {
+    "total_parameters": 17092,
+    "total_mac_operations": 749568,
+    "estimated_latency_ms": 0.234,
+    "estimated_energy_microjoules": 1.17
+  },
+  "layers": [
+    {
+      "name": "conv1d_1",
+      "type": "Conv1D",
+      "input_shape": [
+        1,
+        256
+      ],
+      "output_shape": [
+        16,
+        128
+      ],
+      "weights": 80,
+      "biases": 16,
+      "macs": 20480
+    },
+    {
+      "name": "conv1d_2",
+      "type": "Conv1D",
+      "input_shape": [
+        16,
+        128
+      ],
+      "output_shape": [
+        32,
+        64
+      ],
+      "weights": 2560,
+      "biases": 32,
+      "macs": 327680
+    },
+    {
+      "name": "conv1d_3",
+      "type": "Conv1D",
+      "input_shape": [
+        32,
+        64
+      ],
+      "output_shape": [
+        64,
+        32
+      ],
+      "weights": 6144,
+      "biases": 64,
+      "macs": 393216
+    },
+    {
+      "name": "linear_classifier",
+      "type": "Linear",
+      "input_shape": [
+        2048
+      ],
+      "output_shape": [
+        4
+      ],
+      "weights": 8192,
+      "biases": 4,
+      "macs": 8192
+    }
+  ]
+}

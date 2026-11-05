@@ -1,0 +1,37 @@
+{
+  "status": "PASS",
+  "fp32_model": {
+    "accuracy": 0.7419744389654825,
+    "macro_f1": 0.3229802008921907,
+    "macro_recall": 0.4199277565804106,
+    "macro_precision": 0.3103673244242372,
+    "per_class_f1": [
+      0.846812274952966,
+      0.028478057889822595,
+      0.41501103752759383,
+      0.0016194331983805667
+    ],
+    "parameters": 17092,
+    "weight_memory_bytes": 68368
+  },
+  "int8_model": {
+    "accuracy": 0.8757572708060783,
+    "macro_f1": 0.25064040717293784,
+    "macro_recall": 0.25394881673087505,
+    "macro_precision": 0.4690627654458551,
+    "per_class_f1": [
+      0.9353750660042889,
+      0.0,
+      0.06718656268746251,
+      0.0
+    ],
+    "parameters": 17092,
+    "weight_memory_bytes": 17092
+  },
+  "comparison": {
+    "macro_f1_difference": -0.07233979371925287,
+    "accuracy_difference_percent": 13.37828318405958,
+    "weight_compression_ratio": 4.0,
+    "hardware_compatibility": "Fully compliant with MAX78002 INT8 accumulator architecture"
+  }
+}

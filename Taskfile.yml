@@ -126,6 +126,16 @@ tasks:
     cmds:
       - uv run python src/noise_test.py --model all --snr 12 6 0 {{.CLI_ARGS}}
 
+  quantize:
+    desc: 'Run INT8 quantization engine and evaluation on held-out test split'
+    cmds:
+      - uv run python src/quantize.py {{.CLI_ARGS}}
+
+  synthesize:
+    desc: 'Generate MAX78002 model configuration, synthesis outputs, and embedded C firmware'
+    cmds:
+      - uv run python src/synthesize.py {{.CLI_ARGS}}
+
   purge:
     desc: 'Purge model checkpoints (usage: task purge), or purge all runs (usage: task purge -- all)'
     cmds:

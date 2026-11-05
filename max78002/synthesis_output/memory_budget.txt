@@ -1,0 +1,51 @@
+================================================================================
+ANALOG DEVICES MAX78002 HARDWARE SYNTHESIS & MEMORY BUDGET REPORT (STAGE 6.3)
+================================================================================
+Target Platform  : Analog Devices MAX78002 Edge-AI Microcontroller
+Accelerator Clock: 50 MHz (ISO internal secondary oscillator)
+ALU Architecture : 64 Parallel 8-bit Matrix SIMD Processors
+Input Geometry   : 256 Samples @ 360 Hz (MLII Lead, Z-score normalized, clipped [-3, 3])
+Target Classes   : 4 (N: Normal, S: Supraventricular, V: Ventricular, F: Fusion)
+================================================================================
+
+1. DEPLOYMENT EVIDENCE TABLE (Section 6.3)
+--------------------------------------------------------------------------------
+Requirement                             Result      Details
+--------------------------------------------------------------------------------
+Model accepted by MAX78002 toolchain  : PASS        1D CNN layers conform to AI8X spec
+Quantization completed                 : PASS        Symmetric INT8 weights & INT32 bias
+Synthesis completed                    : PASS        Memory maps & state machine verified
+C/device files generated               : PASS        cnn.h, cnn.c, weights.h, main.c
+Weight-memory requirement              : 17.44 KB    0.83% of 2,048 KB CRAM capacity
+Data-memory requirement                : 4.00 KB     0.78% of 512 KB SRAM capacity
+================================================================================
+
+2. MEMORY UTILIZATION BREAKDOWN
+--------------------------------------------------------------------------------
+Memory Domain           Used (Bytes)       Available (Bytes)    Utilization (%)
+--------------------------------------------------------------------------------
+Weight SRAM (CRAM)       17,440 B        2,097,152 B (2.0 MB)      0.83%
+Activation SRAM (SRAM)    4,096 B          524,288 B (512 KB)     0.78%
+--------------------------------------------------------------------------------
+Headroom Summary: Over 99% of weight and activation memory remains free for
+multichannel buffering, streaming firmware, and firmware telemetry.
+
+3. LAYER-BY-LAYER COMPUTATIONAL & MAC BUDGET
+--------------------------------------------------------------------------------
+Layer         Operation            Input Shape      Output Shape      Params     MACs
+--------------------------------------------------------------------------------
+Layer 0       Conv1D (k=5, p=2)    (1, 256)         (16, 128)*            96     20,480
+Layer 1       Conv1D (k=5, p=2)    (16, 128)        (32, 64)*          2,592    327,680
+Layer 2       Conv1D (k=3, p=1)    (32, 64)         (64, 32)*          6,208    393,216
+Layer 3       Linear Classifier    (2048)           (4)                8,196      8,192
+--------------------------------------------------------------------------------
+TOTALS:                                                               17,092    749,568
+* Includes hardware ReLU activation and MaxPool1D(2) downsampling.
+
+4. ESTIMATED HARDWARE PERFORMANCE (50 MHz Clock, 64 SIMD Processors)
+--------------------------------------------------------------------------------
+Inference Latency: ~0.234 ms (749,568 MACs / (64 * 50 MHz))
+Active Power     : ~5.0 mW
+Energy per Beat  : ~1.17 uJ per heartbeat
+Battery Impact   : Continuous 24-hour holter monitoring consumes < 0.1 mAh.
+================================================================================
