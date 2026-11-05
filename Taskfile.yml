@@ -10,16 +10,14 @@ tasks:
     silent: true
 
   download-dataset:
-    desc: Download MIT-BIH Arrhythmia Database using wget
-    aliases: [download-dataset-wget]
+    desc: Download MIT-BIH Arrhythmia Database using wfdb
     cmds:
-      - wget -r -N -c -np -nd -P dataset/mit-bih-arrhythmia-database-1.0.0 -e robots=off https://physionet.org/files/mitdb/1.0.0/
+      - uv run python src/download_data.py
 
-  download-dataset-curl:
-    desc: Download and extract MIT-BIH Arrhythmia Database using curl and tar
+  download-dataset-with-noise:
+    desc: Download MIT-BIH Arrhythmia and Noise Stress Test Databases using wfdb
     cmds:
-      - curl.exe -L -o dataset/mitdb.zip https://physionet.org/static/published-projects/mitdb/mit-bih-arrhythmia-database-1.0.0.zip
-      - tar -xf dataset/mitdb.zip -C dataset
+      - uv run python src/download_data.py --include-noise
 
   install-packages:
     desc: Install project dependencies with uv
