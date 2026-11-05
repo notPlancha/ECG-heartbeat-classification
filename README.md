@@ -84,7 +84,7 @@ ECG-heartbeat-classification/
     ├── per_class_metrics.csv       # Table 5.2: Per-class precision, recall, and F1 metrics
     ├── noise_results.csv           # Table 5.4: Noise robustness metrics across clean, 12dB, 6dB, 0dB
     ├── noise_results.png           # Noise degradation curves across SNR conditions
-    ├── preprocessing_noise_benefit.csv # 14.93 dB Butterworth baseline wander attenuation proof
+    ├── preprocessing_noise_benefit.csv # Butterworth baseline wander attenuation proof (2.89 dB MSE reduction)
     ├── eda_overview.png            # CRISP-DM Stage 2 & 3 exploratory data analysis panel
     ├── error_waveforms.png         # CRISP-DM Stage 5.5 qualitative error analysis waveforms
     ├── dataset_statistics.csv      # Table 3.8: Summary table of beat counts by split and class
@@ -180,7 +180,7 @@ To guarantee zero data leakage, we enforce the **inter-patient MIT-BIH benchmark
 
 ### 3. Signal Filtering
 - **Bandpass Filter**: 3rd-order zero-phase Butterworth filter ($0.5 - 40.0\text{ Hz}$).
-- **Removal**: Eliminates low-frequency baseline wander ($< 0.5\text{ Hz}$) from respiration and electrode movement, and suppresses high-frequency EMG muscle tremors and $50/60\text{ Hz}$ powerline hum without phase distortion. Attenuates NSTDB baseline wander by **14.93 dB**.
+- **Removal**: Eliminates low-frequency baseline wander ($< 0.5\text{ Hz}$) from respiration and electrode movement, and suppresses high-frequency EMG muscle tremors and $50/60\text{ Hz}$ powerline hum without phase distortion. Attenuates added baseline wander by **2.89 dB** (with $18.94\text{ dB}$ pure wander suppression).
 
 ### 4. Beat Segmentation & Windowing for MAX78002
 - **Sampling Frequency**: $360\text{ Hz}$ native.

@@ -88,7 +88,7 @@
   
   This technical report documents an ECG heartbeat classification system designed for the Analog Devices MAX78002 microcontroller. Following the CRISP-DM workflow and the ANSI/AAMI EC57 standard, the classifier sorts single-lead ECG beats into four clinical categories: normal (N), supraventricular ectopic (S), ventricular ectopic (V), and fusion (F). To prevent data leakage, we split the 44 evaluated MIT-BIH recordings by patient: 22 records in the DS1 development set and 22 records in the held-out DS2 test set, yielding 100,679 annotated beats.
   
-  We implemented a 3-layer 1D Convolutional Neural Network with 17,092 parameters, sized specifically for the MAX78002 hardware accelerator. On the 49,685 beats in the DS2 test set, the unquantized FP32 model achieves 74.20% accuracy, a Macro F1 of 0.3230, and 87.58% recall on ventricular ectopic beats. Post-training quantization to symmetric INT8 confirmed software toolchain compatibility: the model requires 17.44 KB of weight memory (0.83% of the 2.0 MB CRAM) and 4.0 KB of activation SRAM (0.78% of 512 KB). At a 50 MHz clock speed, the estimated execution time is 0.234 ms per beat (749,568 MACs) with an estimated energy draw of 1.17 $mu$J. Testing against the MIT-BIH Noise Stress Test Database showed that a 0.5 to 40 Hz Butterworth bandpass filter reduces respiratory baseline wander by 14.93 dB, preventing signal saturation under motion artifacts.
+  We implemented a 3-layer 1D Convolutional Neural Network with 17,092 parameters, sized specifically for the MAX78002 hardware accelerator. On the 49,685 beats in the DS2 test set, the unquantized FP32 model achieves 74.20% accuracy, a Macro F1 of 0.3230, and 87.58% recall on ventricular ectopic beats. Post-training quantization to symmetric INT8 confirmed software toolchain compatibility: the model requires 17.44 KB of weight memory (0.83% of the 2.0 MB CRAM) and 4.0 KB of activation SRAM (0.78% of 512 KB). At a 50 MHz clock speed, the estimated execution time is 0.234 ms per beat (749,568 MACs) with an estimated energy draw of 1.17 $mu$J. Testing against the MIT-BIH Noise Stress Test Database showed that a 0.5 to 40 Hz Butterworth bandpass filter provides 2.89 dB overall MSE noise power reduction (with 18.94 dB pure low-frequency baseline wander attenuation), preventing signal saturation under motion artifacts.
 ]
 
 #v(6pt)
@@ -150,7 +150,7 @@ The project is constrained by six factors:
   align: (left, left, left),
   table.header([Risk], [Why is it Important?], [Proposed Mitigation]),
   [Intra-patient data leakage], [Randomly assigning beats from the same recording into train and test sets lets the network memorize patient-specific baseline shapes. Reported accuracy often exceeds 98%, but drops sharply on new patients.], [Use the inter-patient split from de Chazal et al. (2004): 22 records in DS1 (Train and Val) and 22 completely separate records in DS2 (Test), with zero patient overlap.],
-  [Minority class neglect], [Standard cross-entropy loss causes predictions to collapse toward Class N, yielding ~89% accuracy while missing virtually all ventricular and supraventricular events.], [Use class-weighted Focal Loss ($gamma=2.0$), inverse-frequency batch sampling, and decision threshold calibration on the validation split.],
+  [Minority class neglect], [Standard cross-entropy loss causes predictions to collapse toward Class N, yielding ~89% accuracy while missing virtually all ventricular and supraventricular events.], [Use class-weighted loss with inverse-frequency weights ($w_c = N_"total" / (4 dot N_c)$) and balanced batch sampling on the training split to penalize minority misclassifications.],
   [Hardware incompatibility], [Recurrent networks (LSTMs, GRUs) and complex transforms (Wavelets) cannot run on the MAX78002 CNN accelerator.], [Restrict the model to 1D Conv, ReLU, MaxPool1D (stride 2), and Linear layers; verify compliance through the `ai8x-synthesis` YAML specification.],
   [Quantization loss], [Converting 32-bit floating-point weights to 8-bit integers can round small minority-class weights to zero.], [Calibrate dynamic range per layer, use symmetric per-channel INT8 quantization, and clip input amplitudes to $[-3.0, 3.0]sigma$.]
 )
@@ -252,15 +252,15 @@ Beats map to the ANSI/AAMI EC57 classes as follows:
 
 == Class Imbalance Strategy
 To handle the 112 to 1 imbalance without modifying the true distribution of the test set, we use three techniques:
-1. Focal loss: $"FL"(p_t) = -alpha_t (1 - p_t)^gamma log(p_t)$ with focusing parameter $gamma = 2.0$. This reduces loss contribution from easily classified normal beats, focusing optimization on hard minority examples.
-2. Weighted batch sampling: Training batches are sampled with weights inversely proportional to class frequency: $w_c = N_"total" / (4 dot N_c)$.
-3. Validation threshold tuning: Decision thresholds for classes F and S are adjusted post-training on the DS1 validation split using precision-recall curves to improve minority F1 without using test data.
+1. Inverse-frequency class weighting: Loss weights inversely proportional to class frequency ($w_c = N_"total" / (4 dot N_c)$) penalize misclassifications of minority classes N, S, V, and F during gradient descent.
+2. Balanced batch sampling: PyTorch DataLoader sampling with inverse-frequency sampling weights to ensure minority ectopic beats appear consistently across mini-batches.
+3. Validation-guided model checkpointing: Model selection monitors Macro F1 across epochs on the DS1 validation split rather than raw majority-class accuracy.
 
 == Data Augmentation
 Augmentation runs only on the training split (DS1):
-- Amplitude scaling: Random multiplier from $U(0.9, 1.1)$ to simulate varying signal strength.
-- Temporal jitter: Random shifts of $plus.minus 4$ samples ($plus.minus 11$ ms) to model R-peak detection error.
-- Additive noise: Low-level Gaussian noise ($"SNR" = 20$ dB) to model thermal drift.
+- Amplitude scaling: Random multiplier from $U(0.85, 1.15)$ to simulate varying signal strength.
+- Temporal jitter: Random shifts of $plus.minus 5$ samples ($plus.minus 13.9$ ms) to model R-peak detection error.
+- Additive noise: Low-level Gaussian noise ($sigma = 0.02$) to model thermal drift.
 
 == Final Dataset Partition Statistics
 
@@ -287,7 +287,7 @@ The environment uses locked dependencies managed with `uv`:
 == Baseline Models
 To benchmark our neural network, we evaluated two standard baselines on the same 256-sample features:
 1. Multinomial Logistic Regression: Linear model with L2 regularization ($C=1.0$). Parameters: $256 times 4 + 4 = 1,028$. DS2 test accuracy: 66.84%, Macro F1: 0.3221.
-2. Random Forest: Ensemble of 500 decision trees with balanced class weights. Parameters: 90,718 tree nodes. DS2 test accuracy: 83.78%, Macro F1: 0.3788. Although its Macro F1 is competitive, the 90,718 nodes require more than 9.0 MB of memory, far exceeding the MAX78002's 2.0 MB limit.
+2. Random Forest: Ensemble of 100 decision trees with balanced class weights. Parameters: 90,718 tree nodes. DS2 test accuracy: 83.78%, Macro F1: 0.3788. Although its Macro F1 is competitive, the 90,718 nodes require more than 9.0 MB of memory, far exceeding the MAX78002's 2.0 MB limit.
 
 == Proposed Edge Model Architecture
 The 1D CNN architecture was designed to run directly on the MAX78002 accelerator's 64 parallel 8-bit SIMD ALUs.
@@ -310,17 +310,17 @@ The 1D CNN architecture was designed to run directly on the MAX78002 accelerator
 - Memory size: 17,092 INT8 parameters need only 17.44 KB, using less than 1% of the chip's 2.0 MB weight SRAM.
 
 == Training Configuration
-- Optimizer: Adam with learning rate $eta = 0.001$, $beta_1 = 0.9$, $beta_2 = 0.999$, weight decay $1 times 10^(-4)$.
+- Optimizer: Adam with learning rate $eta = 0.001$, $beta_1 = 0.9$, $beta_2 = 0.999$.
 - Batch size: 64 beats per mini-batch.
-- Epochs: 20 epochs with dynamic learning rate reduction (`ReduceLROnPlateau(patience=3, factor=0.5)`).
-- Loss function: Focal Loss with $gamma = 2.0$ and class weights $w = [0.25, 2.0, 1.0, 3.0]$.
-- Early stopping: Monitored validation Macro F1 with a patience of 5 epochs.
+- Epochs: 20 epochs on DS1 training records.
+- Loss function: Class-weighted cross-entropy loss with inverse class weights ($w_c = N_"total" / (4 dot N_c)$).
+- Model checkpointing: Monitored validation Macro F1 on held-out DS1 validation records.
 
 == Model Selection
 We evaluated three model candidates:
 1. Recurrent model (`ECG_CNN_GRU` from colleague branch): Rejected. The MAX78002 CNN accelerator lacks recurrent execution hardware; RNN operations run on the Cortex-M4 CPU, causing stalls.
 2. Wavelet model (from colleague branch): 9-level Daubechies 6 DWT. Rejected. Floating-point multi-rate filtering incurs high SRAM buffering overhead that exceeds microcontroller memory.
-3. Our 1D CNN: Sized for the `ai8x` hardware spec, achieving a validation Macro F1 of 0.4421 and compiling cleanly in the synthesis toolchain.
+3. Our 1D CNN: Sized for the `ai8x` hardware spec, achieving a validation Macro F1 of 0.4441 and compiling cleanly in the synthesis toolchain.
 
 == Quantization Formulation
 Post-Training Quantization (PTQ) converts the trained FP32 network into hardware-ready INT8 signed integers:
@@ -399,7 +399,7 @@ The model was tested against real physiological noise from the MIT-BIH Noise Str
 
 *Empirical check on preprocessing*:
 To answer Section 5.4 directly ("Does preprocessing help?"), we injected real NSTDB baseline wander (`bw`) into continuous ECG signals before filtering. 
-The 3rd-order Butterworth bandpass filter reduced baseline wander noise power by 14.93 dB, preventing normalizer saturation. Without filtering, respiratory wander pushed signal amplitudes beyond the $[-3.0, 3.0]$ clipping limits, destroying QRS shapes and degrading classifier accuracy.
+The 3rd-order Butterworth bandpass filter reduced baseline wander noise power by 2.89 dB (with 18.94 dB attenuation of pure low-frequency wander), preventing normalizer saturation. Without filtering, respiratory wander pushed signal amplitudes beyond the $[-3.0, 3.0]$ clipping limits, destroying QRS shapes and degrading classifier accuracy.
 
 #figure(
   image("results/error_waveforms.png", width: 94%),
@@ -408,8 +408,8 @@ The 3rd-order Butterworth bandpass filter reduced baseline wander noise power by
 
 == Qualitative Error Analysis
 Inspecting specific misclassified beats (@fig-errors) illustrates why errors occur:
-1. Case 1 (Beat 1, True N $->$ Pred S): The normal beat has slight baseline drift and a raised T-wave ($"probs" = [0.47, 0.51, 0.01, 0.01]$). The network mistakes the elevated T-wave for an atrial premature wave.
-2. Case 2 (Beat 229, True S $->$ Pred N): The supraventricular beat has a typical narrow QRS complex ($"probs" = [0.82, 0.12, 0.04, 0.02]$). Without knowing the beat arrived 180 ms early, spatial convolution cannot distinguish it from normal sinus rhythm.
+1. Case 1 (Beat 1, True N $->$ Pred S): The normal beat has slight baseline drift and a raised T-wave ($"probs" = [0.03, 0.97, 0.00, 0.00]$). The network mistakes the elevated T-wave for an atrial premature wave.
+2. Case 2 (Beat 229, True S $->$ Pred N): The supraventricular beat has a typical narrow QRS complex ($"probs" = [1.00, 0.00, 0.00, 0.00]$). Without knowing the beat arrived early, spatial convolution cannot distinguish it from normal sinus rhythm.
 3. Case 3 (Beat 5025, True V $->$ Pred N): An atypical ventricular beat originating high in the septum. Conduction partially engaged the normal Purkinje network, creating a narrow QRS that evaded detection.
 4. Case 4 (True V under 0 dB Noise): Electrode motion noise obscures the QRS notch. With features submerged, the model defaults to the majority class (N).
 
@@ -421,7 +421,7 @@ Inspecting specific misclassified beats (@fig-errors) illustrates why errors occ
   table.header([Criterion], [Status], [Justification]),
   [Predictive Performance], [*Achieved*], [Test accuracy = 74.20% (target $>70%$); Macro F1 = 0.3230 (target $>0.30$) on held-out DS2.],
   [Minority-Class Sensitivity], [*Achieved*], [Class V Recall = 87.58% (target $>75.0%$). Non-zero F1 across all four classes on unseen patients.],
-  [Noise Robustness], [*Achieved*], [Accuracy dropped by 4.43% at 0 dB SNR (target $<15%$). Butterworth filter attenuated noise by 14.93 dB.],
+  [Noise Robustness], [*Achieved*], [Accuracy dropped by 4.43% at 0 dB SNR (target $<15%$). Butterworth filter attenuated noise by 2.89 dB (18.94 dB out-of-band wander reduction).],
   [Model Complexity], [*Achieved*], [17,092 parameters (target $<25,000$); 17.44 KB flash (target $<100$ KB); 749,568 MACs (target $<1,000,000$).],
   [MAX78002 Silicon Compatibility], [*Achieved*], [100% PASS across toolchain acceptance, INT8 quantization, synthesis, and C code generation.]
 )
@@ -490,7 +490,7 @@ No. The Random Forest baseline reached 83.78% accuracy, but its 90,718 tree node
 Post-training INT8 quantization lowered Macro F1 by 0.0724 (from 0.3230 to 0.2506). Normal beat precision remained high, but smaller weights for minority classes rounded toward zero. For imbalanced edge applications, Quantization-Aware Training is needed to protect minority sensitivity.
 
 == How Sensitive Was the System to ECG Noise?
-The model held up well under moderate noise (12 dB and 6 dB SNR), keeping Macro F1 within 0.005 of clean signals. Under severe 0 dB noise, accuracy declined gradually to 69.77%. Crucially, the 0.5 to 40 Hz bandpass filter cut baseline wander noise power by 14.93 dB, confirming that front-end filtering is essential before digitization.
+The model held up well under moderate noise (12 dB and 6 dB SNR), keeping Macro F1 within 0.005 of clean signals. Under severe 0 dB noise, accuracy declined gradually to 69.77%. Crucially, the 0.5 to 40 Hz bandpass filter cut noise power by 2.89 dB (18.94 dB out-of-band wander suppression), confirming that front-end filtering is essential before digitization.
 
 == What Compromises Were Necessary Because of Hardware Constraints?
 Hardware limits required:
