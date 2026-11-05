@@ -60,6 +60,7 @@ from src.constants import (
     set_seed,
 )
 from src.dataset import ECGDataset
+from src.evaluate import compute_evaluation_metrics
 from src.model import (
     MODELS,
     BaseECGModel,
@@ -365,38 +366,8 @@ def evaluate_predictions(
     y_pred: np.ndarray,
     num_classes: int = NUM_CLASSES,
 ) -> dict[str, Any]:
-    """Compute complete diagnostic metrics for a prediction vector."""
-    acc = float(accuracy_score(y_true, y_pred))
-    precisions, recalls, f1s, supports = precision_recall_fscore_support(
-        y_true,
-        y_pred,
-        labels=list(range(num_classes)),
-        zero_division=0,
-    )
-    macro_prec = np.mean(precisions)
-    macro_rec = np.mean(recalls)
-    macro_f1 = np.mean(f1s)
-
-    cm = confusion_matrix(y_true, y_pred, labels=list(range(num_classes)))
-    specificities = []
-    for i in range(num_classes):
-        tn = np.sum(np.delete(np.delete(cm, i, axis=0), i, axis=1))
-        fp = np.sum(cm[:, i]) - cm[i, i]
-        spec = tn / (tn + fp) if (tn + fp) > 0 else 0.0
-        specificities.append(float(spec))
-
-    return {
-        "accuracy": acc,
-        "macro_f1": float(macro_f1),
-        "macro_recall": float(macro_rec),
-        "macro_precision": float(macro_prec),
-        "per_class_precision": [float(p) for p in precisions],
-        "per_class_recall": [float(r) for r in recalls],
-        "per_class_specificity": specificities,
-        "per_class_f1": [float(f) for f in f1s],
-        "support": [int(s) for s in supports],
-        "confusion_matrix": cm,
-    }
+    """Delegate diagnostic metric computation to canonical evaluate module."""
+    return compute_evaluation_metrics(y_true, y_pred, labels=list(range(num_classes)))
 
 
 @torch.no_grad()
@@ -720,9 +691,9 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--noise-type",
         type=str,
-        default="gaussian",
-        choices=["gaussian", "nstdb-em", "nstdb-ma", "nstdb-bw"],
-        help="Noise generator: 'gaussian' (default) or 'nstdb-em', 'nstdb-ma', 'nstdb-bw'.",
+        default="nstdb-em",
+        choices=["nstdb-em", "gaussian", "nstdb-ma", "nstdb-bw"],
+        help="Noise generator: 'nstdb-em' (default physical noise) or 'gaussian', 'nstdb-ma', 'nstdb-bw'.",
     )
     parser.add_argument(
         "--batch-size",

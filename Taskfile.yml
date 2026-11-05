@@ -9,6 +9,39 @@ tasks:
       - task --list
     silent: true
 
+  # ==============================================================================
+  # Pipeline & Verification (Atomic Automation)
+  # ==============================================================================
+  pipeline:
+    desc: 'Run complete reproducible pipeline: evaluate, noise test, quantize, synthesize, figures, verify, and compile report'
+    cmds:
+      - task: evaluate-cnn
+      - task: noise-test-cnn
+      - task: quantize
+      - task: synthesize
+      - task: generate-figures
+      - task: verify
+      - task: report
+
+  verify:
+    desc: 'Audit and verify consistency across metrics.csv, per-class tables, confusion matrix, and report'
+    aliases: [verify-consistency, verify-metrics]
+    cmds:
+      - uv run python src/verify_consistency.py
+
+  report:
+    desc: 'Compile CRISP-DM project report in Typst to report.pdf'
+    cmds:
+      - typst compile report.typ report.pdf
+
+  generate-figures:
+    desc: 'Generate EDA overview and qualitative error analysis figures for report'
+    cmds:
+      - uv run python src/generate_report_figures.py
+
+  # ==============================================================================
+  # Data Setup & Preparation
+  # ==============================================================================
   download-dataset:
     desc: Download MIT-BIH Arrhythmia Database using wfdb
     cmds:
@@ -19,21 +52,98 @@ tasks:
     cmds:
       - uv run python src/download_data.py --include-noise
 
-  install-packages:
-    desc: Install project dependencies with uv
-    cmds:
-      - uv sync
-
-  to-requirements-txt:
-    desc: Compile locked requirements.txt
-    cmds:
-      - uv pip compile pyproject.toml -o requirements.txt
-
   prepare-data:
     desc: Run the complete data preparation pipeline (filtering, segmentation, normalization, export)
     cmds:
       - uv run python src/prepare_data.py
 
+  # ==============================================================================
+  # Model Evaluation & Testing
+  # ==============================================================================
+  evaluate:
+    desc: 'Evaluate canonical 1D CNN model on held-out test split (DS2)'
+    cmds:
+      - task: evaluate-cnn
+
+  evaluate-cnn:
+    desc: 'Evaluate canonical 1D CNN model on held-out test split (DS2)'
+    cmds:
+      - uv run python src/evaluate.py --model CNN {{.CLI_ARGS}}
+
+  evaluate-baseline:
+    desc: 'Evaluate LogisticRegression model'
+    cmds:
+      - uv run python src/evaluate.py --model LogisticRegression {{.CLI_ARGS}}
+
+  evaluate-rf:
+    desc: 'Evaluate RandomForest model'
+    cmds:
+      - uv run python src/evaluate.py --model RandomForest {{.CLI_ARGS}}
+
+  evaluate-run:
+    desc: 'Evaluate latest isolated run on held-out test split (DS2)'
+    cmds:
+      - uv run python src/evaluate.py --run latest {{.CLI_ARGS}}
+
+  noise-test:
+    desc: 'Run noise robustness evaluation (default: CNN with NSTDB electrode motion noise)'
+    cmds:
+      - uv run python src/noise_test.py {{.CLI_ARGS}}
+
+  noise-test-cnn:
+    desc: 'Run physical noise robustness test on CNN at 12dB, 6dB, 0dB'
+    cmds:
+      - uv run python src/noise_test.py --model CNN --noise-type nstdb-em --snr 12 6 0 {{.CLI_ARGS}}
+
+  noise-test-all:
+    desc: 'Run noise robustness benchmark across all models (Baseline, RF, CNN)'
+    cmds:
+      - uv run python src/noise_test.py --model all --noise-type nstdb-em --snr 12 6 0 {{.CLI_ARGS}}
+
+  # ==============================================================================
+  # Edge-AI Quantization & Synthesis (MAX78002)
+  # ==============================================================================
+  quantize:
+    desc: 'Run INT8 quantization engine and evaluation on held-out test split'
+    cmds:
+      - uv run python src/quantize.py {{.CLI_ARGS}}
+
+  synthesize:
+    desc: 'Generate MAX78002 model configuration, synthesis outputs, and embedded C firmware'
+    cmds:
+      - uv run python src/synthesize.py {{.CLI_ARGS}}
+
+  # ==============================================================================
+  # Model Training (Experimental Runs)
+  # ==============================================================================
+  train:
+    desc: 'Train CNN model in a new isolated run with evaluation (usage: task train -- [extra args])'
+    cmds:
+      - uv run python src/train.py --model CNN --epochs 20 --lr 0.001 --optimizer adam --run --eval {{.CLI_ARGS}}
+
+  train-cnn:
+    desc: 'Train CNN model in a new isolated run with evaluation'
+    cmds:
+      - uv run python src/train.py --model CNN --epochs 20 --lr 0.001 --optimizer adam --seed 42 --run --eval {{.CLI_ARGS}}
+
+  train-baseline:
+    desc: 'Train LogisticRegression in a new isolated run with evaluation'
+    cmds:
+      - uv run python src/train.py --model LogisticRegression --epochs 15 --seed 42 --run --eval {{.CLI_ARGS}}
+
+  train-rf:
+    desc: 'Train RandomForest in a new isolated run with evaluation'
+    cmds:
+      - uv run python src/train.py --model RandomForest --seed 42 --run --eval {{.CLI_ARGS}}
+
+  train-run:
+    desc: 'Train and automatically evaluate model in isolated run folder (usage: task train-run -- --model RandomForest --resample hybrid)'
+    cmds:
+      - uv run python src/train.py --run --eval {{.CLI_ARGS}}
+
+  # ==============================================================================
+  # Notebooks & Submission 1 Tasks
+  # ==============================================================================
   run-notebook:
     desc: 'Execute a notebook in-place (usage: task run-notebook -- <file.ipynb>)'
     cmds:
@@ -65,81 +175,18 @@ tasks:
       - task: run-task2
       - task: run-task3
 
-  train:
-    desc: 'Train CNN model in a new isolated run with evaluation (usage: task train -- [extra args])'
+  # ==============================================================================
+  # Maintenance & Environment
+  # ==============================================================================
+  install-packages:
+    desc: Install project dependencies with uv
     cmds:
-      - uv run python src/train.py --model CNN --epochs 20 --lr 0.001 --optimizer adam --run --eval {{.CLI_ARGS}}
+      - uv sync
 
-  train-baseline:
-    desc: 'Train LogisticRegression in a new isolated run with evaluation'
+  to-requirements-txt:
+    desc: Compile locked requirements.txt
     cmds:
-      - uv run python src/train.py --model LogisticRegression --epochs 15 --seed 42 --run --eval {{.CLI_ARGS}}
-
-  evaluate-baseline:
-    desc: 'Evaluate LogisticRegression (latest run by default, or specify --run runN)'
-    cmds:
-      - uv run python src/evaluate.py --model LogisticRegression --run latest {{.CLI_ARGS}}
-
-  train-rf:
-    desc: 'Train RandomForest in a new isolated run with evaluation'
-    cmds:
-      - uv run python src/train.py --model RandomForest --seed 42 --run --eval {{.CLI_ARGS}}
-
-  evaluate-rf:
-    desc: 'Evaluate RandomForest (latest run by default, or specify --run runN)'
-    cmds:
-      - uv run python src/evaluate.py --model RandomForest --run latest {{.CLI_ARGS}}
-
-  train-cnn:
-    desc: 'Train CNN model in a new isolated run with evaluation'
-    cmds:
-      - uv run python src/train.py --model CNN --epochs 20 --lr 0.001 --optimizer adam --seed 42 --run --eval {{.CLI_ARGS}}
-
-  evaluate-cnn:
-    desc: 'Evaluate CNN model (latest run by default, or specify --run runN)'
-    cmds:
-      - uv run python src/evaluate.py --model CNN --run latest {{.CLI_ARGS}}
-
-  train-run:
-    desc: 'Train and automatically evaluate model in isolated run folder (usage: task train-run -- --model RandomForest --resample hybrid)'
-    cmds:
-      - uv run python src/train.py --run --eval {{.CLI_ARGS}}
-
-  evaluate:
-    desc: 'Evaluate latest isolated run on held-out test split (DS2)'
-    aliases: [evaluate-run]
-    cmds:
-      - uv run python src/evaluate.py --run latest {{.CLI_ARGS}}
-
-  noise-test:
-    desc: 'Run noise robustness evaluation (usage: task noise-test -- --model CNN)'
-    cmds:
-      - uv run python src/noise_test.py {{.CLI_ARGS}}
-
-  noise-test-cnn:
-    desc: 'Run noise robustness test on CNN at 12dB, 6dB, 0dB'
-    cmds:
-      - uv run python src/noise_test.py --model CNN --snr 12 6 0 {{.CLI_ARGS}}
-
-  noise-test-all:
-    desc: 'Run noise robustness benchmark across all models (Baseline, RF, CNN)'
-    cmds:
-      - uv run python src/noise_test.py --model all --snr 12 6 0 {{.CLI_ARGS}}
-
-  quantize:
-    desc: 'Run INT8 quantization engine and evaluation on held-out test split'
-    cmds:
-      - uv run python src/quantize.py {{.CLI_ARGS}}
-
-  synthesize:
-    desc: 'Generate MAX78002 model configuration, synthesis outputs, and embedded C firmware'
-    cmds:
-      - uv run python src/synthesize.py {{.CLI_ARGS}}
-
-  report:
-    desc: 'Compile CRISP-DM project report in Typst to report.pdf'
-    cmds:
-      - typst compile report.typ report.pdf
+      - uv pip compile pyproject.toml -o requirements.txt
 
   purge:
     desc: 'Purge model checkpoints (usage: task purge), or purge all runs (usage: task purge -- all)'

@@ -45,6 +45,7 @@ from src.constants import (
     WINDOW_SIZE,
 )
 from src.dataset import ECGDataset
+from src.evaluate import compute_evaluation_metrics
 from src.model import CNN
 
 DEFAULT_QUANT_OUT = Path(here("max78002", "quantization_output"))
@@ -303,26 +304,26 @@ def evaluate_quantization(
             preds_fp32.append(torch.argmax(cnn_fp32(batch), dim=1).numpy())
         preds_fp32 = np.concatenate(preds_fp32)
 
-    acc_fp32 = accuracy_score(y_test, preds_fp32)
-    p_fp32, r_fp32, f1_fp32, s_fp32 = precision_recall_fscore_support(
-        y_test, preds_fp32, average="macro", zero_division=0
-    )
+    metrics_fp32 = compute_evaluation_metrics(y_test, preds_fp32)
+    acc_fp32 = metrics_fp32["accuracy"]
+    p_fp32 = metrics_fp32["macro_precision"]
+    r_fp32 = metrics_fp32["macro_recall"]
+    f1_fp32 = metrics_fp32["macro_f1"]
+    f1_per_fp32 = metrics_fp32["per_class_f1"]
 
     # 4. Evaluate Quantized INT8 Engine
     quant_engine = QuantizedCNN(quant_dict)
     preds_int8 = quant_engine.predict(X_test, batch_size=512)
 
-    acc_int8 = accuracy_score(y_test, preds_int8)
-    p_int8, r_int8, f1_int8, s_int8 = precision_recall_fscore_support(
-        y_test, preds_int8, average="macro", zero_division=0
-    )
+    metrics_int8 = compute_evaluation_metrics(y_test, preds_int8)
+    acc_int8 = metrics_int8["accuracy"]
+    p_int8 = metrics_int8["macro_precision"]
+    r_int8 = metrics_int8["macro_recall"]
+    f1_int8 = metrics_int8["macro_f1"]
+    f1_per_int8 = metrics_int8["per_class_f1"]
 
     delta_acc = (acc_int8 - acc_fp32) * 100.0
     delta_f1 = f1_int8 - f1_fp32
-
-    # Per-class comparison
-    _, _, f1_per_fp32, _ = precision_recall_fscore_support(y_test, preds_fp32, average=None, zero_division=0)
-    _, _, f1_per_int8, _ = precision_recall_fscore_support(y_test, preds_int8, average=None, zero_division=0)
 
     print("\n" + "=" * 80)
     print("SECTION 5.3 QUANTIZATION ANALYSIS (FP32 vs INT8)")

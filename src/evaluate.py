@@ -6,6 +6,7 @@ on held-out test data (DS2) using scikit-learn metrics.
 """
 
 import argparse
+import json
 import os
 import re
 import sys
@@ -123,10 +124,15 @@ def compute_evaluation_metrics(
   )
 
   return {
-    "accuracy": acc,
-    "macro_precision": macro_prec,
-    "macro_recall": macro_rec,
-    "macro_f1": macro_f1,
+    "accuracy": float(acc),
+    "macro_precision": float(macro_prec),
+    "macro_recall": float(macro_rec),
+    "macro_f1": float(macro_f1),
+    "per_class_precision": [float(p) for p in precisions],
+    "per_class_recall": [float(r) for r in recalls],
+    "per_class_specificity": [float(s) for s in specificities],
+    "per_class_f1": [float(f) for f in f1s],
+    "support": [int(s) for s in supports],
     "confusion_matrix": cm,
     "per_class_table": per_class_df,
     "classification_report": report_text,
@@ -439,6 +445,21 @@ def evaluate_model(
     plot_confusion_matrix(
       cm, CLASS_NAMES, cm_root_png, title=f"Confusion Matrix - {model_tag}"
     )
+
+    summary_json = res_p / "summary_metrics.json"
+    summary_data = {
+      "model": model_tag,
+      "accuracy": float(results["accuracy"]),
+      "macro_f1": float(results["macro_f1"]),
+      "macro_recall": float(results["macro_recall"]),
+      "macro_precision": float(results["macro_precision"]),
+      "parameters": num_params,
+      "per_class_f1": results["per_class_f1"],
+      "per_class_recall": results["per_class_recall"],
+    }
+    with open(summary_json, "w", encoding="utf-8") as f:
+      json.dump(summary_data, f, indent=2)
+    print(f"Saved summary metrics manifest to: {summary_json}")
 
   return results
 
