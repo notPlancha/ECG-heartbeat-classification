@@ -197,9 +197,12 @@ def quantize_pytorch_cnn(
     input_min, input_max = input_range
     input_scale = np.float32(input_max / 127.0)
 
+    conv_layers = getattr(cnn, "conv_layers", [m for m in cnn.features if hasattr(m, "weight") and m.weight.dim() == 3])
+    fc_layer = getattr(cnn, "linear_layer", cnn.classifier)
+
     # Layer 1
-    w1_fp32 = cnn.features[0].weight.detach().cpu().numpy()  # (16, 1, 5)
-    b1_fp32 = cnn.features[0].bias.detach().cpu().numpy()  # (16,)
+    w1_fp32 = conv_layers[0].weight.detach().cpu().numpy()  # (16, 1, 5)
+    b1_fp32 = conv_layers[0].bias.detach().cpu().numpy()  # (16,)
     w1_scale = np.max(np.abs(w1_fp32), axis=(1, 2)) / 127.0
     w1_scale = np.where(w1_scale > 0, w1_scale, 1.0).astype(np.float32)
     w1_int8 = np.clip(np.rint(w1_fp32 / w1_scale[:, None, None]), -127, 127).astype(np.int8)
@@ -207,8 +210,8 @@ def quantize_pytorch_cnn(
     b1_int32 = np.rint(b1_fp32 / b1_scale).astype(np.int32)
 
     # Layer 2
-    w2_fp32 = cnn.features[3].weight.detach().cpu().numpy()  # (32, 16, 5)
-    b2_fp32 = cnn.features[3].bias.detach().cpu().numpy()  # (32,)
+    w2_fp32 = conv_layers[1].weight.detach().cpu().numpy()  # (32, 16, 5)
+    b2_fp32 = conv_layers[1].bias.detach().cpu().numpy()  # (32,)
     w2_scale = np.max(np.abs(w2_fp32), axis=(1, 2)) / 127.0
     w2_scale = np.where(w2_scale > 0, w2_scale, 1.0).astype(np.float32)
     w2_int8 = np.clip(np.rint(w2_fp32 / w2_scale[:, None, None]), -127, 127).astype(np.int8)
@@ -216,8 +219,8 @@ def quantize_pytorch_cnn(
     b2_int32 = np.rint(b2_fp32 / b2_scale).astype(np.int32)
 
     # Layer 3
-    w3_fp32 = cnn.features[6].weight.detach().cpu().numpy()  # (64, 32, 3)
-    b3_fp32 = cnn.features[6].bias.detach().cpu().numpy()  # (64,)
+    w3_fp32 = conv_layers[2].weight.detach().cpu().numpy()  # (64, 32, 3)
+    b3_fp32 = conv_layers[2].bias.detach().cpu().numpy()  # (64,)
     w3_scale = np.max(np.abs(w3_fp32), axis=(1, 2)) / 127.0
     w3_scale = np.where(w3_scale > 0, w3_scale, 1.0).astype(np.float32)
     w3_int8 = np.clip(np.rint(w3_fp32 / w3_scale[:, None, None]), -127, 127).astype(np.int8)
@@ -225,8 +228,8 @@ def quantize_pytorch_cnn(
     b3_int32 = np.rint(b3_fp32 / b3_scale).astype(np.int32)
 
     # Layer 4 (Linear)
-    w_fc_fp32 = cnn.classifier.weight.detach().cpu().numpy()  # (4, 2048)
-    b_fc_fp32 = cnn.classifier.bias.detach().cpu().numpy()  # (4,)
+    w_fc_fp32 = fc_layer.weight.detach().cpu().numpy()  # (4, 2048)
+    b_fc_fp32 = fc_layer.bias.detach().cpu().numpy()  # (4,)
     w_fc_scale = np.max(np.abs(w_fc_fp32), axis=1) / 127.0
     w_fc_scale = np.where(w_fc_scale > 0, w_fc_scale, 1.0).astype(np.float32)
     w_fc_int8 = np.clip(np.rint(w_fc_fp32 / w_fc_scale[:, None]), -127, 127).astype(np.int8)

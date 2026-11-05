@@ -18,6 +18,7 @@ Generates:
 import json
 import sys
 from pathlib import Path
+from typing import Any
 
 import numpy as np
 from pyhere import here
@@ -26,7 +27,17 @@ PROJECT_ROOT = here()
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
-from src.constants import CLASS_NAMES
+from src.constants import (
+    CLASS_NAMES,
+    DEFAULT_CNN_CHANNELS_1,
+    DEFAULT_CNN_CHANNELS_2,
+    DEFAULT_CNN_CHANNELS_3,
+    DEFAULT_CNN_KERNEL_SIZE_1,
+    DEFAULT_CNN_KERNEL_SIZE_2,
+    DEFAULT_CNN_KERNEL_SIZE_3,
+    NUM_CLASSES,
+    WINDOW_SIZE,
+)
 
 DEFAULT_QUANT_PATH = Path(here("max78002", "quantization_output", "quantized_cnn.npz"))
 DEFAULT_CONFIG_DIR = Path(here("max78002", "model_configuration"))
@@ -39,7 +50,7 @@ def generate_model_configuration(out_dir: Path) -> Path:
     out_dir.mkdir(parents=True, exist_ok=True)
     yaml_path = out_dir / "cnn_max78002.yaml"
 
-    yaml_content = """# Analog Devices MAX78002 CNN Accelerator Configuration
+    yaml_content = f"""# Analog Devices MAX78002 CNN Accelerator Configuration
 # Model: 1D CNN for ECG Heartbeat Classification (ANSI/AAMI EC57 4-Class)
 # Target Hardware: Analog Devices MAX78002 (Dual Core ARM Cortex-M4 + CNN Accelerator)
 
@@ -57,9 +68,9 @@ layers:
     type: Conv1d
     processors: 0x000000000000000f # 4 processors
     in_channels: 1
-    out_channels: 16
-    kernel_size: 5
-    padding: 2
+    out_channels: {DEFAULT_CNN_CHANNELS_1}
+    kernel_size: {DEFAULT_CNN_KERNEL_SIZE_1}
+    padding: {DEFAULT_CNN_KERNEL_SIZE_1 // 2}
     stride: 1
     activation: ReLU
     pool:
@@ -72,10 +83,10 @@ layers:
     sequence: 1
     type: Conv1d
     processors: 0x00000000000000ff # 8 processors
-    in_channels: 16
-    out_channels: 32
-    kernel_size: 5
-    padding: 2
+    in_channels: {DEFAULT_CNN_CHANNELS_1}
+    out_channels: {DEFAULT_CNN_CHANNELS_2}
+    kernel_size: {DEFAULT_CNN_KERNEL_SIZE_2}
+    padding: {DEFAULT_CNN_KERNEL_SIZE_2 // 2}
     stride: 1
     activation: ReLU
     pool:
@@ -88,10 +99,10 @@ layers:
     sequence: 2
     type: Conv1d
     processors: 0x000000000000ffff # 16 processors
-    in_channels: 32
-    out_channels: 64
-    kernel_size: 3
-    padding: 1
+    in_channels: {DEFAULT_CNN_CHANNELS_2}
+    out_channels: {DEFAULT_CNN_CHANNELS_3}
+    kernel_size: {DEFAULT_CNN_KERNEL_SIZE_3}
+    padding: {DEFAULT_CNN_KERNEL_SIZE_3 // 2}
     stride: 1
     activation: ReLU
     pool:
@@ -104,8 +115,8 @@ layers:
     sequence: 3
     type: Linear
     processors: 0x00000000ffffffff # 32 processors
-    in_features: 2048 # 64 channels * 32 samples
-    out_features: 4   # Classes: N, S, V, F
+    in_features: {DEFAULT_CNN_CHANNELS_3 * (WINDOW_SIZE // 8)} # {DEFAULT_CNN_CHANNELS_3} channels * {WINDOW_SIZE // 8} samples
+    out_features: {NUM_CLASSES}   # Classes: N, S, V, F
     bias: true
     activation: None
 """
@@ -212,7 +223,7 @@ def generate_sample_input_header(test_path: Path, input_scale: float, out_path: 
         "",
         "#include <stdint.h>",
         "",
-        f"#define SAMPLE_INPUT_LENGTH 256",
+        f"#define SAMPLE_INPUT_LENGTH {WINDOW_SIZE}",
         f"#define SAMPLE_TRUE_LABEL   {sample_label} // Class '{CLASS_NAMES[sample_label]}'",
         "",
         f"static const int8_t sample_input_int8[{len(sample_int8)}] = {{",
@@ -417,38 +428,37 @@ int main(void) {
 
 def generate_synthesis_reports(data: dict[str, np.ndarray], out_dir: Path) -> dict[str, Any]:
     """Generate synthesis summary report and memory budget documentation."""
-    # Layer parameter breakdown
-    # L1: 16*1*5 + 16 = 96
-    # L2: 32*16*5 + 32 = 2592
-    # L3: 64*32*3 + 64 = 6208
-    # L4: 4*2048 + 4 = 8196
-    total_weights = 80 + 2560 + 6144 + 8192  # 16,976
-    total_biases = 16 + 32 + 64 + 4  # 116
-    total_params = total_weights + total_biases  # 17,092
+    # Dynamic layer parameter and complexity breakdown derived directly from quantized arrays
+    w1, b1 = data["w1"], data["b1"]
+    w2, b2 = data["w2"], data["b2"]
+    w3, b3 = data["w3"], data["b3"]
+    w_fc, b_fc = data["w_fc"], data["b_fc"]
+
+    w_counts = [int(w1.size), int(w2.size), int(w3.size), int(w_fc.size)]
+    b_counts = [int(b1.size), int(b2.size), int(b3.size), int(b_fc.size)]
+
+    total_weights = sum(w_counts)
+    total_biases = sum(b_counts)
+    total_params = total_weights + total_biases
 
     # Weight memory: INT8 weights (1 byte each) + INT32 biases (4 bytes each)
-    weight_mem_bytes = total_weights * 1 + total_biases * 4  # 16,976 + 464 = 17,440 bytes
+    weight_mem_bytes = total_weights * 1 + total_biases * 4
     max_cram_bytes = 2 * 1024 * 1024  # 2,097,152 bytes (2 MB)
 
-    # Activation memory: Peak layer activation buffer
-    # Input: 256 bytes
-    # Layer 1 out: 16 * 128 = 2048 bytes
-    # Layer 2 out: 32 * 64 = 2048 bytes
-    # Layer 3 out: 64 * 32 = 2048 bytes
-    # Layer 4 out: 4 * 4 = 16 bytes
+    # Activation memory: Peak layer activation buffer (double-buffered)
     peak_act_bytes = 2048 * 2  # Double-buffered: 4,096 bytes (4 KB)
     max_sram_bytes = 512 * 1024  # 524,288 bytes (512 KB)
 
-    # Multiply-Accumulate Operations (MACs)
-    # L1: 16 * 1 * 5 * 256 = 20,480
-    # L2: 32 * 16 * 5 * 128 = 327,680
-    # L3: 64 * 32 * 3 * 64 = 393,216
-    # L4: 4 * 2048 = 8,192
-    total_macs = 20480 + 327680 + 393216 + 8192  # 749,568 MACs
+    # Multiply-Accumulate Operations (MACs) computed from layer dimensions
+    macs_l1 = int(w1.size * 256)
+    macs_l2 = int(w2.size * 128)
+    macs_l3 = int(w3.size * 64)
+    macs_l4 = int(w_fc.size)
+    total_macs = macs_l1 + macs_l2 + macs_l3 + macs_l4
 
     # Hardware timing estimation @ 50 MHz clock with 64 parallel SIMD ALUs
     est_cycles = total_macs // 64
-    est_latency_ms = (est_cycles / 50_000_000.0) * 1000.0  # ~0.234 ms
+    est_latency_ms = (est_cycles / 50_000_000.0) * 1000.0
 
     report = {
         "device": "MAX78002",
@@ -477,38 +487,38 @@ def generate_synthesis_reports(data: dict[str, np.ndarray], out_dir: Path) -> di
             {
                 "name": "conv1d_1",
                 "type": "Conv1D",
-                "input_shape": [1, 256],
-                "output_shape": [16, 128],
-                "weights": 80,
-                "biases": 16,
-                "macs": 20480,
+                "input_shape": [int(w1.shape[1]), 256],
+                "output_shape": [int(w1.shape[0]), 128],
+                "weights": int(w1.size),
+                "biases": int(b1.size),
+                "macs": macs_l1,
             },
             {
                 "name": "conv1d_2",
                 "type": "Conv1D",
-                "input_shape": [16, 128],
-                "output_shape": [32, 64],
-                "weights": 2560,
-                "biases": 32,
-                "macs": 327680,
+                "input_shape": [int(w2.shape[1]), 128],
+                "output_shape": [int(w2.shape[0]), 64],
+                "weights": int(w2.size),
+                "biases": int(b2.size),
+                "macs": macs_l2,
             },
             {
                 "name": "conv1d_3",
                 "type": "Conv1D",
-                "input_shape": [32, 64],
-                "output_shape": [64, 32],
-                "weights": 6144,
-                "biases": 64,
-                "macs": 393216,
+                "input_shape": [int(w3.shape[1]), 64],
+                "output_shape": [int(w3.shape[0]), 32],
+                "weights": int(w3.size),
+                "biases": int(b3.size),
+                "macs": macs_l3,
             },
             {
                 "name": "linear_classifier",
                 "type": "Linear",
-                "input_shape": [2048],
-                "output_shape": [4],
-                "weights": 8192,
-                "biases": 4,
-                "macs": 8192,
+                "input_shape": [int(w_fc.shape[1])],
+                "output_shape": [int(w_fc.shape[0])],
+                "weights": int(w_fc.size),
+                "biases": int(b_fc.size),
+                "macs": macs_l4,
             },
         ],
     }

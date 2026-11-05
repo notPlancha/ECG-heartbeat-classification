@@ -4,16 +4,15 @@ model.py
 Model definitions and base classes for ECG heartbeat classification.
 """
 
-from abc import ABC, abstractmethod
-import os
-from pathlib import Path
 import re
+from abc import ABC, abstractmethod
+from pathlib import Path
 from typing import Any
 
 import joblib
 import numpy as np
-from pyhere import here
 import torch
+from pyhere import here
 from sklearn.ensemble import RandomForestClassifier
 from torch import nn
 
@@ -21,6 +20,12 @@ try:
   from src.constants import (
     DEFAULT_BATCH_SIZE,
     DEFAULT_CLASS_WEIGHT,
+    DEFAULT_CNN_CHANNELS_1,
+    DEFAULT_CNN_CHANNELS_2,
+    DEFAULT_CNN_CHANNELS_3,
+    DEFAULT_CNN_KERNEL_SIZE_1,
+    DEFAULT_CNN_KERNEL_SIZE_2,
+    DEFAULT_CNN_KERNEL_SIZE_3,
     DEFAULT_RANDOM_STATE,
     DEFAULT_RESULTS_DIR,
     DEFAULT_RF_MAX_DEPTH,
@@ -34,6 +39,12 @@ except ImportError:
   from constants import (
     DEFAULT_BATCH_SIZE,
     DEFAULT_CLASS_WEIGHT,
+    DEFAULT_CNN_CHANNELS_1,
+    DEFAULT_CNN_CHANNELS_2,
+    DEFAULT_CNN_CHANNELS_3,
+    DEFAULT_CNN_KERNEL_SIZE_1,
+    DEFAULT_CNN_KERNEL_SIZE_2,
+    DEFAULT_CNN_KERNEL_SIZE_3,
     DEFAULT_RANDOM_STATE,
     DEFAULT_RESULTS_DIR,
     DEFAULT_RF_MAX_DEPTH,
@@ -330,6 +341,12 @@ class CNN(NeuralECGModel):
     input_dim: int = WINDOW_SIZE,
     num_classes: int = NUM_CLASSES,
     in_channels: int = 1,
+    c1: int = DEFAULT_CNN_CHANNELS_1,
+    c2: int = DEFAULT_CNN_CHANNELS_2,
+    c3: int = DEFAULT_CNN_CHANNELS_3,
+    k1: int = DEFAULT_CNN_KERNEL_SIZE_1,
+    k2: int = DEFAULT_CNN_KERNEL_SIZE_2,
+    k3: int = DEFAULT_CNN_KERNEL_SIZE_3,
     random_state: int | None = DEFAULT_RANDOM_STATE,
     **kwargs: Any,
   ) -> None:
@@ -340,19 +357,29 @@ class CNN(NeuralECGModel):
     self.in_channels = in_channels
 
     self.features = nn.Sequential(
-      nn.Conv1d(in_channels, 16, kernel_size=5, padding=2),
+      nn.Conv1d(in_channels, c1, kernel_size=k1, padding=k1 // 2),
       nn.ReLU(),
       nn.MaxPool1d(kernel_size=2),
-      nn.Conv1d(16, 32, kernel_size=5, padding=2),
+      nn.Conv1d(c1, c2, kernel_size=k2, padding=k2 // 2),
       nn.ReLU(),
       nn.MaxPool1d(kernel_size=2),
-      nn.Conv1d(32, 64, kernel_size=3, padding=1),
+      nn.Conv1d(c2, c3, kernel_size=k3, padding=k3 // 2),
       nn.ReLU(),
       nn.MaxPool1d(kernel_size=2),
     )
 
     reduced_dim = input_dim // 8
-    self.classifier = nn.Linear(64 * reduced_dim, num_classes)
+    self.classifier = nn.Linear(c3 * reduced_dim, num_classes)
+
+  @property
+  def conv_layers(self) -> list[nn.Conv1d]:
+    """Return list of convolutional layers in sequence."""
+    return [m for m in self.features if isinstance(m, nn.Conv1d)]
+
+  @property
+  def linear_layer(self) -> nn.Linear:
+    """Return linear classification head."""
+    return self.classifier
 
   def forward(self, x: torch.Tensor) -> torch.Tensor:
     match x.dim():
