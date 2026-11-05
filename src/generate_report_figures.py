@@ -11,7 +11,6 @@ from pathlib import Path
 
 import matplotlib.pyplot as plt
 import numpy as np
-import torch
 from pyhere import here
 
 PROJECT_ROOT = here()
@@ -19,7 +18,7 @@ if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
 from src.constants import CLASS_NAMES, SAMPLING_RATE
-from src.model import CNN, load_trained_model
+from src.model import load_trained_model
 
 plt.style.use("seaborn-v0_8-whitegrid")
 plt.rcParams["font.family"] = "sans-serif"
@@ -120,11 +119,8 @@ def generate_error_waveforms_figure(out_path: Path):
     y_test = test_data["y"]
 
     model = load_trained_model("CNN", device="cpu")
-
-    with torch.no_grad():
-        logits = model(torch.tensor(X_test, dtype=torch.float32))
-        probs = torch.softmax(logits, dim=1).numpy()
-        preds = logits.argmax(dim=1).numpy()
+    probs = model.predict_proba(X_test, batch_size=512)
+    preds = probs.argmax(axis=1)
 
     # Define exact error cases
     time_ms = (np.arange(256) - 90) / SAMPLING_RATE * 1000

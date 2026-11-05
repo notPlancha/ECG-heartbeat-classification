@@ -28,7 +28,6 @@ from typing import Any
 
 import numpy as np
 import pandas as pd
-import torch
 from pyhere import here
 from sklearn.metrics import accuracy_score, precision_recall_fscore_support
 
@@ -292,13 +291,7 @@ def evaluate_quantization(
 
     # 3. Evaluate FP32 PyTorch Model
     cnn_fp32 = load_trained_model("CNN", checkpoint_path=model_path, device="cpu")
-
-    with torch.no_grad():
-        preds_fp32 = []
-        for i in range(0, len(X_test), 512):
-            batch = torch.from_numpy(X_test[i : i + 512]).float()
-            preds_fp32.append(torch.argmax(cnn_fp32(batch), dim=1).numpy())
-        preds_fp32 = np.concatenate(preds_fp32)
+    preds_fp32 = cnn_fp32.predict(X_test, batch_size=512)
 
     metrics_fp32 = compute_evaluation_metrics(y_test, preds_fp32)
     acc_fp32 = metrics_fp32["accuracy"]

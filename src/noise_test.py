@@ -287,36 +287,16 @@ def evaluate_predictions(
     return compute_evaluation_metrics(y_true, y_pred, labels=list(range(num_classes)))
 
 
-@torch.no_grad()
 def predict_signals(
     model: BaseECGModel,
     signals: np.ndarray,
     batch_size: int = DEFAULT_BATCH_SIZE,
     device: torch.device | None = None,
 ) -> np.ndarray:
-    """Run model predictions in batches."""
-    if device is None:
-        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-
-    if isinstance(model, nn.Module):
+    """Run model predictions in batches using canonical BaseECGModel.predict()."""
+    if isinstance(model, nn.Module) and device is not None:
         model.to(device)
-        model.eval()
-
-        all_preds = []
-        n = len(signals)
-        for i in range(0, n, batch_size):
-            batch = signals[i : i + batch_size]
-            tensor_batch = torch.from_numpy(batch).float().to(device)
-            logits = model.forward(tensor_batch)
-            preds = torch.argmax(logits, dim=-1).cpu().numpy()
-            all_preds.append(preds)
-        return np.concatenate(all_preds)
-
-    if hasattr(model, "predict"):
-        flat = signals.reshape(signals.shape[0], -1)
-        return model.predict(flat)
-
-    raise TypeError(f"Unsupported model type: {type(model)}")
+    return model.predict(signals, batch_size=batch_size)
 
 
 # =====================================================================

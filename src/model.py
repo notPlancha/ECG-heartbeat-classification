@@ -19,6 +19,7 @@ from torch import nn
 
 try:
   from src.constants import (
+    DEFAULT_BATCH_SIZE,
     DEFAULT_CLASS_WEIGHT,
     DEFAULT_RANDOM_STATE,
     DEFAULT_RESULTS_DIR,
@@ -31,6 +32,7 @@ try:
   )
 except ImportError:
   from constants import (
+    DEFAULT_BATCH_SIZE,
     DEFAULT_CLASS_WEIGHT,
     DEFAULT_RANDOM_STATE,
     DEFAULT_RESULTS_DIR,
@@ -57,11 +59,19 @@ class BaseECGModel(ABC):
     self.num_classes = num_classes
 
   @abstractmethod
-  def predict(self, x: np.ndarray | torch.Tensor) -> np.ndarray:
+  def predict(
+    self,
+    x: np.ndarray | torch.Tensor,
+    batch_size: int | None = DEFAULT_BATCH_SIZE,
+  ) -> np.ndarray:
     """Predict discrete class labels for input heartbeats."""
 
   @abstractmethod
-  def predict_proba(self, x: np.ndarray | torch.Tensor) -> np.ndarray:
+  def predict_proba(
+    self,
+    x: np.ndarray | torch.Tensor,
+    batch_size: int | None = DEFAULT_BATCH_SIZE,
+  ) -> np.ndarray:
     """Predict class probability distribution for input heartbeats."""
 
   @abstractmethod
@@ -87,30 +97,82 @@ class NeuralECGModel(BaseECGModel, nn.Module):
     """Compute raw class logits."""
 
   @torch.no_grad()
-  def predict(self, x: np.ndarray | torch.Tensor) -> np.ndarray:
+  def predict(
+    self,
+    x: np.ndarray | torch.Tensor,
+    batch_size: int | None = DEFAULT_BATCH_SIZE,
+  ) -> np.ndarray:
+    """
+    Predict discrete class labels with memory-safe batched inference.
+    """
+    self.eval()
     try:
       device = next(self.parameters()).device
     except StopIteration:
       device = torch.device("cpu")
-    if isinstance(x, np.ndarray):
-      x = torch.from_numpy(x).float().to(device)
-    elif isinstance(x, torch.Tensor) and x.device != device:
-      x = x.to(device)
-    logits = self.forward(x)
-    return torch.argmax(logits, dim=-1).cpu().numpy()
+
+    num_samples = 1 if (hasattr(x, "ndim") and x.ndim == 1) else len(x)
+    if batch_size is None or num_samples <= batch_size:
+      if isinstance(x, np.ndarray):
+        x = torch.from_numpy(x).float().to(device)
+      elif isinstance(x, torch.Tensor) and x.device != device:
+        x = x.to(device)
+      logits = self.forward(x)
+      return torch.argmax(logits, dim=-1).cpu().numpy()
+
+    all_preds: list[np.ndarray] = []
+    for i in range(0, num_samples, batch_size):
+      chunk = x[i : i + batch_size]
+      if isinstance(chunk, np.ndarray):
+        chunk_t = torch.from_numpy(chunk).float().to(device)
+      elif isinstance(chunk, torch.Tensor):
+        chunk_t = chunk.to(device)
+      else:
+        chunk_t = torch.tensor(chunk, dtype=torch.float32, device=device)
+      logits = self.forward(chunk_t)
+      preds = torch.argmax(logits, dim=-1).cpu().numpy()
+      all_preds.append(preds)
+
+    return np.concatenate(all_preds)
 
   @torch.no_grad()
-  def predict_proba(self, x: np.ndarray | torch.Tensor) -> np.ndarray:
+  def predict_proba(
+    self,
+    x: np.ndarray | torch.Tensor,
+    batch_size: int | None = DEFAULT_BATCH_SIZE,
+  ) -> np.ndarray:
+    """
+    Predict class probability distributions with memory-safe batched inference.
+    """
+    self.eval()
     try:
       device = next(self.parameters()).device
     except StopIteration:
       device = torch.device("cpu")
-    if isinstance(x, np.ndarray):
-      x = torch.from_numpy(x).float().to(device)
-    elif isinstance(x, torch.Tensor) and x.device != device:
-      x = x.to(device)
-    logits = self.forward(x)
-    return torch.softmax(logits, dim=-1).cpu().numpy()
+
+    num_samples = 1 if (hasattr(x, "ndim") and x.ndim == 1) else len(x)
+    if batch_size is None or num_samples <= batch_size:
+      if isinstance(x, np.ndarray):
+        x = torch.from_numpy(x).float().to(device)
+      elif isinstance(x, torch.Tensor) and x.device != device:
+        x = x.to(device)
+      logits = self.forward(x)
+      return torch.softmax(logits, dim=-1).cpu().numpy()
+
+    all_probs: list[np.ndarray] = []
+    for i in range(0, num_samples, batch_size):
+      chunk = x[i : i + batch_size]
+      if isinstance(chunk, np.ndarray):
+        chunk_t = torch.from_numpy(chunk).float().to(device)
+      elif isinstance(chunk, torch.Tensor):
+        chunk_t = chunk.to(device)
+      else:
+        chunk_t = torch.tensor(chunk, dtype=torch.float32, device=device)
+      logits = self.forward(chunk_t)
+      probs = torch.softmax(logits, dim=-1).cpu().numpy()
+      all_probs.append(probs)
+
+    return np.concatenate(all_probs)
 
   def count_parameters(self) -> int:
     return sum(p.numel() for p in self.parameters())
@@ -133,6 +195,8 @@ class ClassicalECGModel(BaseECGModel):
     """Flatten or squeeze incoming heartbeat arrays into 2D matrices."""
     if isinstance(x, torch.Tensor):
       x = x.detach().cpu().numpy()
+    if x.ndim == 1:
+      return np.expand_dims(x, 0)
     match x.shape:
       case (_, 1, _):
         return x.squeeze(1)
@@ -227,11 +291,19 @@ class RandomForest(ClassicalECGModel):
     self.classifier.fit(x_prep, y)
     return self
 
-  def predict(self, x: np.ndarray | torch.Tensor) -> np.ndarray:
+  def predict(
+    self,
+    x: np.ndarray | torch.Tensor,
+    batch_size: int | None = DEFAULT_BATCH_SIZE,
+  ) -> np.ndarray:
     x_prep = self.prepare_inputs(x)
     return self.classifier.predict(x_prep)
 
-  def predict_proba(self, x: np.ndarray | torch.Tensor) -> np.ndarray:
+  def predict_proba(
+    self,
+    x: np.ndarray | torch.Tensor,
+    batch_size: int | None = DEFAULT_BATCH_SIZE,
+  ) -> np.ndarray:
     x_prep = self.prepare_inputs(x)
     return self.classifier.predict_proba(x_prep)
 
