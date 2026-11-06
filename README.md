@@ -160,6 +160,15 @@ task synthesize
 task report
 ```
 
+### 9. Produce Final Submission Archive
+```powershell
+# Generate submission zip using git archive (defaults to GroupXX_ECG_Project.zip):
+task archive
+
+# Or specify your assigned group number:
+task archive GROUP=Group05
+```
+
 ---
 
 ## 🔬 Data Understanding & Preparation Pipeline

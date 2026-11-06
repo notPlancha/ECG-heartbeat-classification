@@ -1,0 +1,5 @@
+# Exclude instructor instructions, starter zip, and archive artifacts from git archive exports
+docs/ export-ignore
+.devcontainer/ export-ignore
+.gitattributes export-ignore
+*.zip export-ignore

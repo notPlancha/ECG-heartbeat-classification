@@ -34,6 +34,16 @@ tasks:
     cmds:
       - typst compile report.typ report.pdf
 
+  archive:
+    desc: 'Produce clean submission zip archive using git archive (usage: task archive [GROUP=GroupXX])'
+    aliases: [package, bundle, submission]
+    vars:
+      GROUP: '{{.GROUP | default "GroupXX"}}'
+      OUTPUT: '{{.OUTPUT | default (printf "%s_ECG_Project.zip" .GROUP)}}'
+      PREFIX: '{{.PREFIX | default (printf "%s_ECG_Project/" .GROUP)}}'
+    cmds:
+      - git archive --format=zip --prefix="{{.PREFIX}}" -o "{{.OUTPUT}}" HEAD
+
   generate-figures:
     desc: 'Generate EDA overview and qualitative error analysis figures for report'
     cmds:
