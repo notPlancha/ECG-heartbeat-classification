@@ -3,6 +3,7 @@ dataset/*
 *.pth
 *.joblib
 *.pkl
+*.zip
 
 # Experiment run directories and settings
 runs/
