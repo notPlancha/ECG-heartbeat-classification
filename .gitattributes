@@ -3,3 +3,10 @@ docs/ export-ignore
 .devcontainer/ export-ignore
 .gitattributes export-ignore
 *.zip export-ignore
+
+# Exclude report deliverable and report creation files from archive export
+report.pdf export-ignore
+report.typ export-ignore
+src/generate_report_figures.py export-ignore
+results/eda_overview.png export-ignore
+results/error_waveforms.png export-ignore
