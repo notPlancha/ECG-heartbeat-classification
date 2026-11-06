@@ -10,3 +10,18 @@ report.typ export-ignore
 src/generate_report_figures.py export-ignore
 results/eda_overview.png export-ignore
 results/error_waveforms.png export-ignore
+
+# Scratch & legacy notebooks (Task1 and Task3 notebooks retained)
+notebooks/play-around.ipynb export-ignore
+notebooks/midterm-submission.ipynb export-ignore
+notebooks/noise_robustness.ipynb export-ignore
+
+# Duplicate & intermediate results
+results/cnn_confusion_matrix.* export-ignore
+results/cnn_per_class_metrics.csv export-ignore
+results/logistic_regression_training_history.csv export-ignore
+
+# Git plumbing & developer utilities
+.gitignore export-ignore
+**/.gitkeep export-ignore
+src/purge.py export-ignore
