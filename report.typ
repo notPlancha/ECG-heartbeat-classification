@@ -86,9 +86,9 @@
 )[
   #text(weight: "bold", fill: rgb("#1a365d"))[Executive Summary]
   
-  Structured under the CRISP-DM methodology, this technical report evaluates a compact, single-lead ECG heartbeat classification system targeted to the Analog Devices MAX78002 Edge-AI microcontroller. Designed as the ECG-only processing stage for wearable cardiac monitors, the classifier maps individual heartbeats into four ANSI/AAMI EC57 categories: normal (N), supraventricular ectopic (S), ventricular ectopic (V), and fusion (F). To prevent intra-patient data leakage, the 44 non-paced MIT-BIH Arrhythmia Database recordings (100,679 annotated beats) are split strictly by patient: 22 records form the DS1 development set and 22 records form the held-out DS2 test set.
+  This report evaluates a compact ECG heartbeat classification system targeted to the Analog Devices MAX78002 microcontroller, designed as an ECG-only processing stage for wearable cardiac monitors. Under the ANSI/AAMI EC57 standard, the classifier maps individual beats into four categories: normal (N), supraventricular ectopic (S), ventricular ectopic (V), and fusion (F). The 44 non-paced MIT-BIH recordings (100,679 annotated beats) partition by patient into equal 22-record development (DS1) and held-out test (DS2) cohorts, eliminating intra-patient data leakage.
   
-  The classifier uses a three-layer 1D convolutional neural network with 17,092 parameters, sized to fit the MAX78002 hardware accelerator without exceeding on-chip memory limits. On the 49,685 beats in the untouched DS2 test set, the FP32 model achieves 74.20% accuracy, a macro F1 score of 0.3230, and 87.58% recall on ventricular ectopic beats (Class V). Software-verified toolchain synthesis and post-training symmetric INT8 quantization confirm full hardware compatibility, consuming 17.44 KB of weight memory (0.83% of the 2.0 MB CRAM) and 4.0 KB of activation SRAM (0.78% of 512 KB). Post-training quantization lowers macro F1 to 0.2506 due to integer truncation of minority-class weights, indicating the need for quantization-aware training in edge production. At 50 MHz, datasheet-derived execution estimates indicate 0.234 ms latency per beat (749,568 MACs) and 1.17 $mu$J energy draw. Stress testing with MIT-BIH Noise Stress recordings shows that a front-end 0.5 to 40 Hz Butterworth bandpass filter attenuates baseline wander by 18.94 dB and cuts overall noise power by 2.89 dB MSE, preventing baseline drift and motion artifacts from saturating the software input normalizer and $[-3.0, 3.0]$ fixed-point dynamic range.
+  The classifier uses a three-layer 1D convolutional neural network with 17,092 parameters, sized for the MAX78002 accelerator without exceeding on-chip memory limits. On the 49,685 beats in the untouched DS2 test set, the FP32 model achieves 74.20% accuracy, a macro F1 score of 0.3230, and 87.58% recall on ventricular ectopic beats (Class V). Software-verified toolchain synthesis and post-training symmetric INT8 quantization confirm hardware compatibility, requiring 17.44 KB of weight memory (0.83% of the 2.0 MB CRAM) and 4.0 KB of activation SRAM (0.78% of the 512 KB pool). Post-training quantization lowers macro F1 to 0.2506 due to integer truncation of minority-class weights, indicating that edge deployment will require quantization-aware training. At 50 MHz, datasheet-derived execution estimates indicate 0.234 ms latency per beat (749,568 MACs) and 1.17 $mu$J energy draw. On the MIT-BIH Noise Stress Test Database, a front-end 0.5 to 40 Hz Butterworth bandpass filter attenuates baseline wander by 18.94 dB and cuts overall noise power by 2.89 dB MSE, preventing baseline drift and motion artifacts from saturating the software normalizer and fixed-point dynamic range.
 ]
 
 #v(6pt)
@@ -101,7 +101,7 @@ Cardiac arrhythmias range from acute emergencies like ventricular fibrillation t
 Moving inference onto wearable edge microcontrollers allows real-time beat classification directly on ambulatory patches. By processing signals locally, the device avoids continuous Bluetooth or cellular transmission, cutting the radio duty cycle by roughly 90% and extending coin-cell battery life to several weeks. On-device analysis also eliminates cloud latency for urgent ventricular alerts, keeps patient waveforms private, and operates reliably in shielded hospital wards without cellular coverage. This workflow supports ambulatory patients, post-infarction convalescents, elderly individuals at elevated arrhythmia risk, and cardiologists triaging high-volume Holter recordings.
 
 == Data-mining objective
-The machine learning objective is to classify single-lead 1D ECG heartbeats into discrete diagnostic categories within the storage and arithmetic limits of an edge microcontroller:
+The machine learning task maps single-lead 1D ECG heartbeats into discrete diagnostic categories under microcontroller hardware constraints:
 
 #table(
   columns: (1fr, 3.5fr),
@@ -121,22 +121,22 @@ Deploying the classifier to the MAX78002 establishes five engineering objectives
 - Maintain compatibility with the Analog Devices MAX78002 CNN accelerator by using only hardware-supported operations that compile directly to embedded C code through the `ai8x-synthesis` toolchain.
 
 == Success criteria
-Because normal sinus beats account for roughly 89% of ambulatory ECG data, overall accuracy alone cannot confirm clinical efficacy. Project success is evaluated against five measurable criteria:
-- *Predictive performance*: Macro-averaged F1 on the held-out DS2 test set must exceed 0.30, with overall accuracy above 70.0%.
-- *Minority-class performance*: Sensitivity (recall) on Class V must exceed 75.0% to reliably detect dangerous ventricular arrhythmias, while Classes S and F must achieve non-zero F1 scores on unseen patients.
-- *Noise robustness*: Under 0 dB physical noise from the MIT-BIH Noise Stress Test Database, accuracy loss must not exceed 15% relative to clean ECG inputs, supported by front-end bandpass filtering that attenuates baseline wander and electromyographic noise.
-- *Model complexity*: Total parameter count must remain below 25,000, storage footprint under 100 KB, and compute budget under 1,000,000 MAC operations per beat.
-- *MAX78002 compatibility*: The network must pass every stage of the MAX78002 toolchain (model validation, INT8 quantization, synthesis, and C driver generation), requiring under 50 KB of weight memory (below 2.5% of CRAM) and under 10 KB of activation SRAM (below 2.0% of system SRAM).
+Severe class imbalance (~89% sinus beats) renders overall accuracy an incomplete metric for clinical utility. Project success therefore depends on five quantitative criteria:
+- Predictive performance requires macro-averaged F1 on the held-out DS2 test set to exceed 0.30, with overall classification accuracy above 70.0%.
+- Minority-class sensitivity on Class V must exceed 75.0% to reliably detect dangerous ventricular arrhythmias, while Classes S and F must achieve non-zero F1 scores on unseen patients.
+- Noise robustness requires that accuracy loss under 0 dB physical noise from the MIT-BIH Noise Stress Test Database remain within 15% relative to clean ECG inputs, supported by front-end bandpass filtering that attenuates baseline wander and electromyographic noise.
+- Model complexity must remain within embedded limits: fewer than 25,000 parameters, storage footprint under 100 KB, and compute budget under 1,000,000 MAC operations per beat.
+- Toolchain compatibility requires passing every stage of the MAX78002 compilation flow (model validation, INT8 quantization, synthesis, and C driver generation), requiring under 50 KB of weight memory (below 2.5% of CRAM) and under 10 KB of activation SRAM (below 2.0% of system SRAM).
 
 == Constraints
 The implementation is bounded by seven hardware and operational factors:
-1. *Limited Edge-AI memory*: The MAX78002 provides 2.0 MB of CNN weight SRAM (CRAM) and 512 KB of system SRAM; the board includes no external RAM.
-2. *Fixed-point/INT8 computation*: The hardware accelerator computes strictly with signed 8-bit integers ([-128, 127]) for weights and 32-bit accumulators, requiring software emulation on the Cortex-M4 CPU for any floating-point operation.
-3. *Class imbalance*: Normal sinus beats outnumber ectopic beats by up to 100 to 1, causing unweighted cross-entropy models to collapse into predicting only the majority class.
-4. *Limited number of subjects*: The MIT-BIH database contains recordings from only 47 subjects, making cross-patient generalization difficult due to variations in electrode placement, chest anatomy, and cardiac history.
-5. *Physical noise*: Ambulatory recordings carry severe physical artifacts, including electrode motion (`em`), baseline wander (`bw`), and muscle tremor (`ma`).
-6. *Computational resources*: The Cortex-M4 microcontroller runs at 50 MHz without hardware floating-point acceleration for neural network layers, requiring convolutional operations to execute on the accelerator's 64 parallel SIMD ALUs within a budget of 1,000,000 MAC operations per beat.
-7. *Absence of physical MAX78002 hardware*: Without physical silicon, reported deployment metrics (0.234 ms latency, 5.0 mW power, 1.17 $mu$J energy) are software-verified estimates calculated from `ai8x-synthesis` memory maps, register configurations, and datasheet electrical specifications.
+1. Limited Edge-AI memory restricts storage to 2.0 MB of dedicated CNN weight SRAM (CRAM) and 512 KB of system SRAM; the MAX78002 board provides no external RAM.
+2. Fixed-point INT8 computation requires the accelerator to execute strictly with signed 8-bit integer weights ([-128, 127]) and 32-bit accumulators, while any floating-point operation relies on software emulation on the Cortex-M4 CPU.
+3. Severe class imbalance, where normal sinus beats outnumber ectopic beats by up to 100 to 1, causes unweighted cross-entropy models to collapse toward majority-class predictions.
+4. A limited patient population of 47 subjects in the MIT-BIH database impedes cross-patient generalization because individual electrode placement, chest anatomy, and cardiac pathologies vary widely.
+5. Real physical noise in ambulatory recordings (electrode motion `em`, baseline wander `bw`, and muscle tremor `ma`) obscures subtle diagnostic waveforms.
+6. Constrained computational resources require all convolutional layers to execute across the accelerator's 64 parallel SIMD ALUs within 1,000,000 MAC operations per beat, because the 50 MHz Cortex-M4 CPU lacks hardware neural network acceleration.
+7. The absence of physical MAX78002 hardware means reported inference latency (0.234 ms), power (5.0 mW), and energy (1.17 $mu$J) are software-verified estimates derived from `ai8x-synthesis` memory maps and manufacturer electrical specifications rather than benchtop measurements.
 
 == Risks and challenges
 
@@ -155,7 +155,7 @@ The implementation is bounded by seven hardware and operational factors:
 = Data understanding
 
 == Dataset description
-The MIT-BIH Arrhythmia Database serves as the standard reference benchmark for automated arrhythmia analysis. The dataset comprises 48 two-channel ambulatory ECG recordings of approximately 30 minutes each (1,800 seconds per record, totaling roughly 24 hours), collected from 47 distinct subjects (records `201` and `202` come from the same individual). Analog signals were digitized at a sampling frequency of 360 Hz per channel with 11-bit resolution over a $plus.minus 10$ mV range (200 ADC units/mV). In 45 of the 48 recordings, Channel 1 is Modified Limb Lead II (MLII), which captures ventricular depolarization along the primary cardiac axis; Channel 2 is usually modified lead V1 (or occasionally V2, V4, or V5). Two or more cardiologists independently annotated over 110,000 heartbeats, marking fiducial R-peak locations and beat morphologies.
+The MIT-BIH Arrhythmia Database is the standard reference benchmark for automated arrhythmia analysis. The dataset contains 48 two-channel ambulatory ECG recordings of approximately 30 minutes each (1,800 seconds per record, totaling roughly 24 hours), collected from 47 distinct subjects (records `201` and `202` come from the same individual). Analog signals were digitized at a sampling frequency of 360 Hz per channel with 11-bit resolution over a $plus.minus 10$ mV range (200 ADC units/mV). In 45 of the 48 recordings, Channel 1 is Modified Limb Lead II (MLII), which captures ventricular depolarization along the primary cardiac axis; Channel 2 is usually modified lead V1 (or occasionally V2, V4, or V5). Two or more cardiologists independently annotated over 110,000 heartbeats, marking fiducial R-peak locations and beat morphologies.
 
 == Target classes and documented exclusions
 Under the ANSI/AAMI EC57:1998 standard, 15 original MIT-BIH beat types map into four clinical classes. Non-beat annotations and paced recordings are excluded.
@@ -168,7 +168,7 @@ Under the ANSI/AAMI EC57:1998 standard, 15 original MIT-BIH beat types map into 
   [Class S], [Atrial premature (`A`), Aberrated atrial premature (`a`), Nodal premature (`J`), Supraventricular premature (`S`)], [2,781 (2.76%)],
   [Class V], [Premature ventricular contraction (`V`), Ventricular escape (`E`)], [7,008 (6.96%)],
   [Class F], [Fusion of ventricular and normal beat (`F`)], [802 (0.80%)],
-  [*Total Valid*], [All 4 target AAMI classes across 44 evaluated records], [100,679 (100.0%)]
+  [*Total valid*], [All 4 target AAMI classes across 44 evaluated records], [100,679 (100.0%)]
 )
 
 Four paced recordings (`102`, `104`, `107`, and `217`) are excluded because electronic pacemaker spikes distort the natural QRS complex. We also exclude non-beat annotations and unclassifiable markers: rhythm change tags (`+`: 1,173), signal quality markers (`~`: 573), ventricular flutter markers (`!`: 472), isolated noise spikes (`|`: 131), unclassifiable beats (`Q`: 15), non-conducted P-waves (`x`: 21), and 39 boundary beats.
@@ -179,31 +179,25 @@ Four paced recordings (`102`, `104`, `107`, and `217`) are excluded because elec
 ) <fig-eda>
 
 == Exploratory data analysis
-Exploratory analysis reveals how the four target classes differ in physiological origin and waveform morphology (@fig-eda):
+The four heartbeat classes exhibit distinct electrophysiological origins and waveform shapes (@fig-eda):
 - Class N (normal): Normal sinus beats exhibit a sharp R-peak, a narrow QRS complex below 100 ms, and an upright T-wave.
 - Class S (supraventricular ectopic): Arising in the atria or AV junction, these complexes resemble normal beats in QRS width but arrive prematurely, often with distorted or inverted P-waves.
 - Class V (ventricular ectopic): Impulses originating in the ventricles conduct slowly outside the specialized His-Purkinje network, producing a widened QRS complex (>120 ms), an inverted T-wave, and a post-ectopic compensatory pause.
 - Class F (fusion): Hybrid complexes produced when sinus and ventricular pacemakers discharge simultaneously.
 
-Inspection of the full exploratory pipeline in `notebooks/EDA.ipynb` confirms all minimum data characteristics:
-1. Example raw ECG signals illustrate clean sinus rhythm alongside lead differences between MLII and precordial chest leads.
-2. Example heartbeat waveforms (@fig-eda A) depict characteristic morphology across classes.
-3. Class distributions (@fig-eda B) show severe imbalance: normal beats make up 89.48% of the 100,679 valid beats, while fusion beats account for only 0.80% (an imbalance ratio of roughly 112 to 1).
-4. Subject and record distributions (@fig-eda B) partition across the development (DS1, 22 records) and test (DS2, 22 records) cohorts.
-5. Signal amplitude distributions (@fig-eda C) center around zero after Z-score normalization, bounded by the $[-3.0, 3.0]sigma$ hardware clipping thresholds.
-6. Examples of noisy ECG traces capture baseline wander, muscle tremor, and electrode motion.
+Continuous two-channel recordings capture clean sinus rhythm alongside baseline lead differences between MLII and precordial chest leads. Averaged beat waveforms (@fig-eda A) highlight the morphological divergence across classes, while the amplitude distribution (@fig-eda C) centers at zero with tails bounded by the $[-3.0, 3.0]sigma$ clipping limits. Class distributions (@fig-eda B) show pronounced skew: normal beats constitute 89.48% of the 100,679 classified beats, whereas fusion beats represent 0.80% (an imbalance ratio of roughly 112 to 1). Partitioning by subject separates the 44 records into development (DS1, 22 records) and test (DS2, 22 records) cohorts without subject overlap.
 
 == Data quality audit
-An audit across all 48 recordings reveals specific data quality and signal integrity factors:
+Signal continuity and artifact analysis across all 48 recordings identify several quality considerations:
 - Missing data: Verification confirmed complete signal continuity with no missing samples across any recording.
 - Extreme amplitudes: Low-frequency baseline wander (0.1 to 0.5 Hz) from respiration and perspiration reaches up to 300% of the QRS height in records `108`, `116`, and `208`, requiring dynamic clamping to prevent fixed-point overflow.
 - Corrupted segments and noisy regions: Burst electromyographic (EMG) noise (>35 Hz) from patient muscle contractions appears in records `105` and `203`, while sporadic electrode contact loss (`em`) occurs during physical movement.
-- Class imbalance: Severe skew across the 100,679 beats (89.48% N vs. 0.80% F) would cause unweighted models to predict solely the majority class.
-- Differences between recordings: Inter-subject anatomical variations, thoracic impedance, and electrode placement create substantial morphological diversity across the 47 patients.
-- Differences between ECG channels: Channel 1 is MLII in 45 recordings (93.75%). Paced records `102` and `104` use Lead V5 on Channel 1 and V2 on Channel 2, while record `114` has V5 on Channel 1 and MLII on Channel 2.
+- Class imbalance: The 112 to 1 ratio between majority N (89.48%) and rare F (0.80%) would cause unweighted models to predict solely the majority class.
+- Subject differences: Variations in thoracic anatomy, heart orientation, and skin-electrode impedance create substantial morphological diversity across the 47 patients.
+- Lead configurations: Channel 1 is MLII in 45 recordings (93.75%). Paced records `102` and `104` use Lead V5 on Channel 1 and V2 on Channel 2, while record `114` has V5 on Channel 1 and MLII on Channel 2.
 
 == Data leakage analysis
-Data leakage occurs when information from the evaluation split inadvertently influences model training. In ECG arrhythmia classification, randomly splitting individual heartbeats from the same subject into training and test sets can produce misleading results. Because thoracic anatomy, heart geometry, and electrode impedance vary from person to person, heartbeats from a single patient share a distinct morphological baseline. A model evaluated on randomly partitioned beats learns individual patient signatures rather than generalized arrhythmia patterns. While such models report nominal test accuracy above 98%, their performance collapses when deployed on unseen patients.
+In ECG classification, randomly splitting individual heartbeats from the same subject into training and test sets produces misleading results. Because thoracic anatomy, cardiac axis, and electrode impedance vary between individuals, heartbeats from any single recording share a distinct baseline signature. Models trained on random beat splits learn these patient-specific features, reporting nominal test accuracies above 98% that drop sharply when evaluated on unfamiliar subjects.
 
 To prevent intra-patient data leakage, we adopt the inter-patient partitioning protocol of de Chazal et al. (2004). All beats from any given subject belong exclusively to either the development cohort (DS1, 22 records) or the evaluation cohort (DS2, 22 records). The DS2 test partition remained strictly held out without modification throughout model tuning and training.
 
@@ -228,15 +222,15 @@ Reference R-peak fiducial locations are parsed directly from official PhysioNet 
 The fixed 256-sample window satisfies the input requirements of the MAX78002 CNN hardware accelerator. Sizing the input to $256 = 2^8$ samples enables three successive stride-2 pooling stages ($256 -> 128 -> 64 -> 32$) through integer halving, eliminating boundary truncation or remainder padding in hardware execution registers.
 
 == Signal preprocessing
-The preprocessing pipeline transforms continuous analog-converted recordings into fixed-point heartbeat tensors through six sequential stages:
+Processing continuous ECG into fixed-point heartbeat tensors ready for the MAX78002 accelerator requires six ordered operations:
 $ "Raw ECG" -> "Bandpass Filter" -> "Segmentation" -> "Z-Score Standardization" -> "Amplitude Clipping" -> "INT8 Scaling" -> "Model Input" $
 
-1. *Bandpass filtering (0.5 to 40.0 Hz):* A 3rd-order Butterworth filter applied forward and backward (`scipy.signal.sosfiltfilt`) eliminates phase distortion. Highpass attenuation at 0.5 Hz removes respiratory and perspiration baseline wander, while lowpass attenuation at 40.0 Hz suppresses 50/60 Hz mains interference and electromyographic noise while preserving diagnostic ECG frequencies (0.67 to 40 Hz).
-2. *Beat segmentation:* Slices continuous signal streams into fixed 256-sample segments centered on annotated R-peaks.
-3. *Z-score standardization:* Each window is standardized to zero mean and unit variance ($x_"norm"[n] = (x[n] - mu) / sigma$), neutralizing inter-patient baseline offsets and amplitude variations caused by differences in skin impedance and chest geometry.
-4. *Amplitude clipping:* Normalized values are clamped to $[-3.0, 3.0]$, eliminating outlier spikes beyond $3 sigma$ from motion artifacts and establishing strict dynamic bounds for fixed-point quantization.
-5. *INT8 scaling:* Clamped float values map linearly to signed 8-bit integers via $"int8" = "clip"("round"(x / s_"in"), -128, 127)$, with scale factor $s_"in" = 3.0 / 127 approx 0.02362$, matching the MAX78002 hardware FIFO input format.
-6. *Model input formatting:* Tensors are structured as shape `(1, 256)` float32 during PyTorch training and converted to INT8 during export.
+1. A 3rd-order Butterworth bandpass filter (0.5 to 40.0 Hz) applied forward and backward (`scipy.signal.sosfiltfilt`) eliminates phase distortion. The 0.5 Hz highpass cutoff removes respiratory and perspiration baseline wander, while the 40.0 Hz lowpass cutoff suppresses 50/60 Hz mains hum and electromyographic noise while preserving diagnostic ECG frequencies (0.67 to 40 Hz).
+2. Continuous single-channel signals are segmented into 256-sample windows anchored at annotated R-peaks, producing uniform cardiac cycles for batch processing.
+3. Each segmented beat undergoes Z-score standardization ($x_"norm"[n] = (x[n] - mu) / sigma$), scaling samples to zero mean and unit variance to neutralize inter-patient differences in thoracic impedance and electrode contact.
+4. Normalized amplitudes are clamped to $[-3.0, 3.0]$. This cuts outlier spikes beyond $3 sigma$ caused by physical electrode movement and enforces strict dynamic bounds for subsequent fixed-point quantization.
+5. Clamped floating-point values map linearly to signed 8-bit integers via $"int8" = "clip"("round"(x / s_"in"), -128, 127)$, using input scale factor $s_"in" = 3.0 / 127 approx 0.02362$ to match the MAX78002 FIFO registers.
+6. Heartbeat arrays are formatted to `(1, 256)` single-channel tensors for PyTorch model execution.
 
 == Label preparation
 Annotated beat symbols map to the four standard ANSI/AAMI EC57 evaluation classes:
@@ -275,9 +269,11 @@ All environment dependencies are pinned with `uv` under Python 3.14.10, PyTorch 
 = Modeling
 
 == Baseline models
-Two baseline models provide reference benchmarks on identical 256-sample input windows, evaluated on both the DS1 validation split (5 records, 10,583 beats) and the held-out DS2 test split (22 records, 49,685 beats):
-- An L2-regularized multinomial logistic regression ($C=1.0$) contains 1,028 parameters ($256 times 4 + 4$). On the DS1 validation set, it achieves 68.42% accuracy and 0.3518 macro F1. On the DS2 test set, it reaches 66.84% accuracy and 0.3221 macro F1 (macro recall: 0.3929, macro precision: 0.3243).
-- A random forest ensemble of 100 balanced decision trees achieves 84.15% accuracy and 0.3942 macro F1 on the DS1 validation set, and 83.78% accuracy with 0.3788 macro F1 on the DS2 test set (macro recall: 0.4503, macro precision: 0.3535). While the random forest improves macro F1, its 90,718 tree nodes require over 9.0 MB of memory, far exceeding the MAX78002's 512 KB system SRAM limit and completely incompatible with the 2.0 MB CNN accelerator memory.
+Two baseline models provide reference benchmarks on identical 256-sample input windows, evaluated on both the DS1 validation split (5 records, 10,583 beats) and the held-out DS2 test split (22 records, 49,685 beats).
+
+An L2-regularized multinomial logistic regression ($C=1.0$) uses 1,028 parameters ($256 times 4 + 4$). On the DS1 validation cohort, the linear model achieves 68.42% accuracy and 0.3518 macro F1. On the untouched DS2 test cohort, it reaches 66.84% accuracy and 0.3221 macro F1 (macro recall: 0.3929, macro precision: 0.3243).
+
+A random forest ensemble of 100 balanced decision trees achieves higher predictive utility, scoring 84.15% accuracy and 0.3942 macro F1 on DS1 validation records, and 83.78% accuracy with 0.3788 macro F1 on DS2 (macro recall: 0.4503, macro precision: 0.3535). However, the ensemble spans 90,718 decision nodes that require over 9.0 MB of memory. This footprint makes the forest impossible to deploy directly on the MAX78002, which provides 2.0 MB of dedicated CNN weight memory (CRAM) and 512 KB of system SRAM.
 
 == Proposed edge model architecture
 The final classifier is a compact 1D convolutional neural network designed specifically for the Analog Devices MAX78002 accelerator, which features 64 parallel 8-bit SIMD execution units:
@@ -294,46 +290,39 @@ The final classifier is a compact 1D convolutional neural network designed speci
   [*Total*], [], [*3 Conv1D layers + 1 Linear output layer*], [], [*17,092*]
 )
 
-Several design choices adapt this architecture to edge execution:
-- Accelerator operations: The network restricts operations to 1D convolution, ReLU activation, max-pooling, and a single dense output layer, matching the hardware execution units of the MAX78002.
-- Kernel dimensions: Kernels of length 5 and 3 ($k <= 9$) capture local QRS complexes, ST-segment shifts, and notched morphologies without exceeding the accelerator's internal line buffer limits.
-- Dyadic pooling: Successive stride-2 pooling stages halve the temporal dimension ($256 -> 128 -> 64 -> 32$) through clean integer division, matching the hardware pooling engine without remainder padding.
-- Memory and streaming: The 256-sample window matches the accelerator FIFO streaming buffer. Total parameter storage (16,976 INT8 weights and 116 INT32 biases) requires 17,440 bytes (17.44 KB), occupying only 0.83% of the 2.0 MB weight CRAM. Intermediate activations ping-pong between layers at a peak buffer size of 2,048 bytes, needing 4.0 KB of system SRAM (0.78% of 512 KB).
+Every layer adheres to the execution model of the MAX78002 CNN accelerator, which integrates 64 parallel 8-bit SIMD ALUs. The network uses only supported operations: 1D convolutions, standard ReLU activations, stride-2 max-pooling, and a single dense output layer. Small kernel sizes ($k=5$ in layers 0 and 1, $k=3$ in layer 2, all well under the $k <= 9$ hardware boundary) capture local QRS notches, ventricular ectopic widening, and ST-segment deviations while fitting into the accelerator's internal line buffers.
+
+Dyadic pooling stages halve the sequence length ($256 -> 128 -> 64 -> 32$) through integer division, matching the hardware pooling engine without remainder padding or truncation. The 256-sample input window matches the on-chip FIFO streaming buffer, eliminating external memory transactions during acquisition. Total parameter storage encompasses 16,976 INT8 weights and 116 INT32 biases, requiring 17,440 bytes (17.44 KB). This consumes only 0.83% of the 2.0 MB weight CRAM. For intermediate activations, double-buffering ping-pongs between layers at a peak size of 2,048 bytes, requiring 4.0 KB of system SRAM (0.78% of the 512 KB system pool).
 
 == Training configuration
-The network was trained using the following configuration:
-- Optimization: Adam optimizer with learning rate $eta = 0.001$, $beta_1 = 0.9$, and $beta_2 = 0.999$, running on mini-batches of 64 beats.
-- Schedule and early stopping: Training ran for up to 20 epochs on the 17 DS1 training records. Early stopping tracked validation macro F1 on the 5 held-out DS1 validation records with a patience of 5 epochs, restoring the best checkpoint.
-- Loss function and weighting: Class-weighted cross-entropy loss applied inverse class weights ($w_c = N_"total" / (4 dot N_c)$) alongside balanced batch sampling to penalize minority misclassifications during gradient descent.
-- Data augmentation: To prevent overfitting to specific recording conditions, three stochastic augmentations were applied strictly to the DS1 training split: random amplitude scaling from $U(0.85, 1.15)$, temporal jitter of $plus.minus 5$ samples ($plus.minus 13.9$ ms), and additive Gaussian noise ($sigma = 0.02$).
-- Reproducibility: A global random seed of 42 was set across Python, NumPy, and PyTorch.
+Training was conducted on the 17 patient records in the DS1 training split (40,411 beats) using the Adam optimizer with a learning rate of $eta = 0.001$, moment decay rates $beta_1 = 0.9$ and $beta_2 = 0.999$, and mini-batches of 64 beats. Optimization ran for up to 20 epochs with early stopping monitored on the 5 held-out DS1 validation records (10,583 beats). When validation macro F1 failed to improve over a patience window of 5 epochs, training halted and restored the best checkpoint weights. Reproducibility was enforced by fixing random seed 42 across Python, NumPy, and PyTorch.
+
+To counter the 112:1 class imbalance without skewing the posterior probabilities on unseen records, the loss function combined class-weighted cross-entropy with balanced batch sampling. Inverse-frequency class weights ($w_c = N_"total" / (4 dot N_c)$) penalized minority-class errors during backpropagation. Additionally, three stochastic augmentations expanded morphological diversity on DS1 training records only: random amplitude scaling from $U(0.85, 1.15)$ to simulate varying electrode contact, temporal jitter of $plus.minus 5$ samples ($plus.minus 13.9$ ms) to model R-peak detector jitter, and zero-mean additive Gaussian noise ($sigma = 0.02$) to represent analog thermal noise.
 
 == Model selection
-Candidate models and hyperparameters were screened on DS1 development records without touching the DS2 test set (Rules 2 and 3). We evaluated multiple configurations:
-- Recurrent hybrid (CNN-GRU): A 1D CNN paired with a single-layer GRU achieved strong sequence modeling on validation data, but the MAX78002 accelerator lacks recurrent execution hardware. Offloading recurrent state updates to the Cortex-M4 CPU introduced intolerable inference latency.
-- Wavelet transform (9-level Daubechies-6 DWT): Decomposing beats into subbands required extensive multi-rate floating-point filtering, demanding more intermediate SRAM buffering than available on chip.
-- Convolutional hyperparameter search: We varied kernel sizes ($k in {3, 5, 7}$), filter depths (16 to 128 channels), and learning rates ($eta in {0.01, 0.001, 0.0005}$). Larger kernels ($k=7$) increased parameter count without improving validation macro F1, while smaller filter depths (8-16-32) failed to separate Class V beats.
+Candidate architectures and hyperparameters were explored exclusively on the DS1 development records, keeping the DS2 test set untouched until final evaluation to enforce Rules 2 and 3.
 
-Model selection was governed strictly by patient-stratified validation Macro F1 across the 5 held-out DS1 validation records. The final 3-layer 1D CNN achieved a peak validation Macro F1 of 0.4441 and synthesized directly to the MAX78002 toolchain without memory spills.
+Initial experiments examined two non-standard approaches. A recurrent hybrid model combining a 1D CNN with a single-layer GRU produced strong temporal modeling on validation data. However, the MAX78002 accelerator does not contain recurrent execution units, so updating hidden states on the Cortex-M4 CPU introduced severe latency bottlenecks. A 9-level Daubechies-6 discrete wavelet transform was also evaluated to decompose waveforms into subbands, but multi-rate floating-point filtering required more intermediate SRAM buffering than the 512 KB system pool could accommodate.
+
+Within feedforward 1D convolutional topologies, a hyperparameter grid search evaluated kernel lengths ($k in {3, 5, 7}$), channel depths (16 to 128 channels), and learning rates ($eta in {0.01, 0.001, 0.0005}$). Kernels of length 7 added parameter overhead without improving validation scores, while narrower channels (8-16-32) failed to resolve ventricular ectopic features. Selection was governed strictly by patient-stratified validation macro F1 on the 5 held-out DS1 records. The final 3-layer CNN reached a peak validation macro F1 of 0.4441, compiled cleanly through the `ai8x` synthesis toolchain, and fit within accelerator memory without spills.
 
 == Quantization
-The FP32 network was converted to signed 8-bit integers using post-training quantization (PTQ) to match the MAX78002 hardware specifications:
-- Weights: Symmetric per-channel INT8 quantization maps weights into $[-127, 127]$ using scale factor $s_w = max(|W|) / 127$:
-  $ W_"int8" = "clip"("round"(W / s_w), -127, 127). $
-- Biases: Biases are rounded to 32-bit signed integers matching the hardware accumulator depth:
-  $ b_"int32" = "round"(b / (s_"in" dot s_w)). $
-- Activations: Standard ReLU clamps negative values to zero, ensuring outputs remain within $[0, 127]$.
+Deploying the FP32 network to the MAX78002 requires converting floating-point parameters to signed integers using post-training quantization (PTQ). Weights undergo symmetric per-channel INT8 quantization, mapping values into $[-127, 127]$ through scale factor $s_w = max(|W|) / 127$:
+$ W_"int8" = "clip"("round"(W / s_w), -127, 127). $
+Biases round to 32-bit signed integers to match the accelerator's 32-bit accumulator depth, computed from input scale $s_"in"$ and weight scale $s_w$:
+$ b_"int32" = "round"(b / (s_"in" dot s_w)). $
+Because the network uses standard ReLU activations that clamp negative values to zero, activation outputs fall naturally into $[0, 127]$.
 
-Comparing FP32 and INT8 models on the 49,685 DS2 test beats reveals the limitations of PTQ:
+Evaluating the quantized network against the 49,685 DS2 test beats highlights the performance cost of post-training quantization:
 $ "FP32 Macro F1": 0.3230 wide "INT8 Macro F1": 0.2506 wide Delta: -0.0724 $
-While raw classification accuracy deceptively increased from 74.20% to 87.58%, Macro F1 dropped by 0.0724. Truncating small weights toward zero eliminated subtle minority features, collapsing Class S F1 from 0.0285 to 0.0000 and Class V recall from 87.58% to 25.39%. This loss demonstrates why Quantization-Aware Training (QAT) is necessary: by modeling integer rounding noise during backpropagation, QAT prevents minority-class weight decay, preserving clinical sensitivity under INT8 fixed-point execution.
+Although overall classification accuracy rises from 74.20% to 87.58%, macro F1 drops by 0.0724. Because normal beats (Class N) make up roughly 89% of ambulatory records, truncating small weights toward zero collapses weak minority activations and biases predictions toward the majority class. Under PTQ, Class S F1 drops from 0.0285 to 0.0000, and Class V recall collapses from 87.58% to 25.39%. This degradation demonstrates why Quantization-Aware Training (QAT) is necessary for clinical Edge-AI. By simulating rounding noise during forward passes and computing gradients with straight-through estimators during backpropagation, QAT prevents minority weight decay and preserves sensitivity under INT8 fixed-point execution.
 
 #v(6pt)
 
 = Evaluation
 
 == Clean test results (DS2 cohort)
-We evaluated all models on the 49,685 heartbeats of the held-out DS2 test set. In accordance with project instructions, performance is reported using accuracy, Macro F1, Macro Recall, and parameter footprint rather than accuracy alone.
+We evaluated all models on the 49,685 beats of the held-out DS2 test set across multiple metrics to avoid relying on overall accuracy alone.
 
 #table(
   columns: (1.8fr, 1.3fr, 1.3fr, 1.4fr, 1.4fr),
@@ -369,17 +358,20 @@ On the DS2 test set, the FP32 1D CNN exhibits sharp performance variations acros
   caption: [Performance diagnostics. Left: Confusion matrix of the FP32 1D CNN on the 49,685 DS2 test beats. Right: Classification performance across clean, 12 dB, 6 dB, and 0 dB SNR noise conditions.]
 ) <fig-cm-noise>
 
-The per-class metrics reflect underlying cardiac electrophysiology and training set distribution:
-- *Class S (supraventricular ectopic) difficulty:* Class S achieves only 2.49% precision and 3.32% recall (F1 = 2.85%). Across ECG classification literature, supraventricular beats rarely exceed 15% precision on inter-patient splits. Because S beats originate above the ventricles, conduction traverses the normal atrioventricular node and His-Purkinje network, producing a narrow QRS complex that matches normal sinus beats (Class N) almost identically. Distinguishing S beats requires timing context from surrounding RR intervals to detect prematurity; an isolated 256-sample window captures local waveform morphology but lacks this rhythm context.
-- *Class F (fusion) difficulty:* Class F records the lowest metrics, with 0.12% precision and 0.26% recall (F1 = 0.16%). Fusion beats occur when ventricular ectopic pacing and normal sinus pacing coincide, producing hybrid waveforms that blend normal and ventricular morphologies in variable proportions. Compounding this morphological ambiguity, Class F has extreme sample scarcity (only 388 test beats, 0.78% prevalence), preventing the model from establishing a stable decision boundary.
-- *Class V (ventricular ectopic) detection:* In contrast, the network detects ventricular beats reliably, reaching 87.58% sensitivity and an F1 of 0.4150. Ectopic pacemakers in the ventricular myocardium bypass the rapid conduction network, generating wide, notched, and high-amplitude QRS complexes that 1D convolutional kernels identify consistently across patients.
+The per-class metrics reflect underlying cardiac electrophysiology and training set distribution.
+
+Class S (supraventricular ectopic) beats proved especially difficult, yielding 2.49% precision and 3.32% recall (F1 = 2.85%). Across ECG classification benchmarks, supraventricular precision rarely exceeds 15% under inter-patient partitioning. Because S beats originate above the ventricles, their impulses travel through the normal atrioventricular node and His-Purkinje network, producing narrow QRS complexes that match normal sinus beats (Class N) almost identically. Distinguishing an S beat requires timing context from preceding and following RR intervals to detect prematurity; an isolated 256-sample window captures local morphology but lacks this rhythm context.
+
+Class F (fusion) beats showed the lowest overall performance, with 0.12% precision and 0.26% recall (F1 = 0.16%). Fusion beats occur when a ventricular ectopic impulse and a normal sinus impulse activate the myocardium simultaneously. This dual activation generates hybrid waveforms that blend normal and ventricular shapes in unpredictable proportions. In addition, Class F accounts for only 388 beats in the DS2 test set (0.78% prevalence), leaving the model with too few examples to establish a reliable decision boundary.
+
+In contrast, the network detects ventricular ectopic beats (Class V) with 87.58% sensitivity and an F1 score of 0.4150. Because ventricular ectopy originates in the ventricular myocardium, it bypasses the rapid Purkinje conduction system, producing broad, notched, and high-amplitude QRS complexes that the 1D convolutional filters capture reliably across patients.
 
 == Quantization analysis
 $ "FP32 Macro F1": 0.3230 wide "INT8 Macro F1": 0.2506 wide "Difference": -0.0724 $
 
-Post-training quantization (PTQ) increases overall accuracy from 74.20% to 87.58% but reduces Macro F1 from 0.3230 to 0.2506, representing an absolute drop of 0.0724 (7.24 percentage points).
+Post-training quantization (PTQ) increases overall accuracy from 74.20% to 87.58% while reducing Macro F1 from 0.3230 to 0.2506, an absolute drop of 0.0724 (7.24 percentage points).
 
-This divergence stems from severe class imbalance interacting with weight truncation. Normal sinus beats constitute 89.04% of the dataset. Truncating floating-point weights to signed 8-bit integers rounds small weight values toward zero, collapsing weak activations associated with rare classes (S and F) in the final linear projection layer. Consequently, the network decision boundary shifts toward the dominant Class N prior. The quantized model classifies borderline beats as Class N, artificially driving raw accuracy upward while suppressing Class V recall (from 87.58% down to 25.39%) and eliminating minority sensitivity.
+This divergence occurs because severe class imbalance interacts with weight truncation. Normal sinus beats constitute 89.04% of the dataset. Truncating floating-point weights to signed 8-bit integers rounds small weight values toward zero, collapsing weak activations associated with rare classes (S and F) in the final linear projection layer. Consequently, the network decision boundary shifts toward the dominant Class N prior. The quantized model classifies borderline beats as Class N, artificially driving raw accuracy upward while suppressing Class V recall (from 87.58% down to 25.39%) and eliminating minority sensitivity.
 
 This degradation justifies Quantization-Aware Training (QAT). Because PTQ applies uniform per-channel rounding after convergence without updating parameters, it cannot adjust for minority-class loss gradients. QAT inserts fake-quantization nodes into the forward pass during training, allowing backpropagation to redistribute weights and retain sensitivity for ventricular and supraventricular events on INT8 silicon.
 
@@ -396,11 +388,13 @@ We evaluated the final FP32 model against recorded physiological noise from the 
   [0 dB SNR (Severe noise)], [69.77%], [0.2911]
 )
 
-Analyzing performance across noise levels (@fig-cm-noise) addresses four practical deployment questions:
-1. *Which classes are most affected:* Class V is most vulnerable to physical noise. While Class N accuracy remains stable due to its dominant prior, Class V recall drops from 87.58% under clean inputs down to 70.81% at 0 dB SNR (a 16.77 percentage point loss). High-amplitude electrode motion (`em`) and muscle tremor (`ma`) corrupt the characteristic QRS notch and width, causing the network to misclassify noisy ventricular beats as normal sinus rhythm.
-2. *Whether degradation is gradual or abrupt:* Performance degrades gradually and monotonically across the SNR spectrum. Between clean inputs and 12 dB SNR, Macro F1 drops by only 0.0009; at 6 dB SNR, the drop is 0.0049. Even under severe 0 dB noise, Macro F1 declines by 0.0319 (accuracy decreases by 4.43%), demonstrating that convolutional feature extraction degrades gracefully rather than suffering catastrophic failure.
-3. *Whether preprocessing helps:* The front-end 3rd-order Butterworth bandpass filter (0.5–40 Hz) provides measurable protection. When evaluated against continuous NSTDB baseline wander (`bw`), the filter attenuated low-frequency noise below 0.5 Hz by 18.94 dB, reducing overall noise power by 2.89 dB MSE. Without bandpass filtering, respiratory drift drives raw signal amplitudes past the $[-3.0, 3.0]$ normalizer boundaries, clipping QRS peaks and severely corrupting input activations.
-4. *How robustness could be improved:* Tolerance to physical noise could be strengthened through three architectural enhancements: (a) noise-injected data augmentation during training, mixing NSTDB noise records (`em`, `ma`, `bw`) into DS1 training batches at variable SNRs; (b) multi-lead spatial fusion, using Lead V1 or V5 alongside Lead II to maintain clean feature representation when motion artifacts corrupt a single electrode; and (c) an integer-arithmetic median filter preceding normalization to suppress sharp electromyographic spikes.
+Evaluating performance across noise levels (@fig-cm-noise) reveals that Class V beats are the most vulnerable to physical distortion. While Class N accuracy stays stable due to its high prior probability, Class V recall drops from 87.58% under clean inputs to 70.81% at 0 dB SNR, a decline of 16.77 percentage points. Severe electrode motion (`em`) and muscle tremor (`ma`) distort the notch and width of the QRS complex, causing noisy ventricular beats to be misclassified as normal sinus rhythm.
+
+The degradation across the signal-to-noise spectrum is gradual rather than abrupt. Between clean inputs and 12 dB SNR, Macro F1 changes by only -0.0009 (from 0.3230 to 0.3221), and at 6 dB SNR it drops by -0.0049 to 0.3181. Even under severe 0 dB noise, Macro F1 falls by 0.0319 to 0.2911, and overall accuracy decreases by 4.43% (from 74.20% to 69.77%). This steady slope shows that convolutional feature maps retain diagnostic information under moderate interference rather than collapsing abruptly.
+
+Front-end filtering provides strong protection against low-frequency artifacts. Evaluating continuous NSTDB baseline wander (`bw`) through the 3rd-order Butterworth bandpass filter (0.5 to 40 Hz) demonstrates an 18.94 dB attenuation of drift below 0.5 Hz, reducing overall noise power by 2.89 dB MSE. Without this bandpass stage, large respiratory excursions push raw amplitudes past the $[-3.0, 3.0]$ clipping limits of the normalizer, saturating the input window and truncating QRS peaks.
+
+Noise robustness could be improved in future revisions through three practical measures. Training-time noise injection would expose the convolutional kernels to recorded NSTDB noise at varying signal-to-noise ratios. Multi-lead spatial fusion would allow the network to cross-reference Lead II with Lead V1 or V5 when motion artifacts corrupt a single electrode. Finally, adding an integer median filter before normalization would help suppress sharp electromyographic spikes.
 
 #figure(
   image("results/error_waveforms.png", width: 94%),
@@ -408,11 +402,15 @@ Analyzing performance across noise levels (@fig-cm-noise) addresses four practic
 ) <fig-errors>
 
 == Error analysis
-Examining the ECG waveforms of representative misclassifications (@fig-errors) reveals four recurring failure mechanisms:
-- *Case 1 (Beat 1, True N, Pred S; probabilities: [0.03, 0.97, 0.00, 0.00]):* The normal sinus beat exhibits baseline wander and a peaked T-wave. The network misinterprets the prominent repolarization wave as an ectopic atrial P-wave, predicting an atrial premature contraction (Class S).
-- *Case 2 (Beat 229, True S, Pred N; probabilities: [1.00, 0.00, 0.00, 0.00]):* The supraventricular ectopic beat displays a narrow QRS complex identical to sinus rhythm. Because the model receives an isolated 256-sample window without preceding RR-interval timing, spatial convolutions cannot detect the early arrival characteristic of prematurity.
-- *Case 3 (Beat 5025, True V, Pred N):* An atypical ventricular ectopic beat originates high in the interventricular septum, partially utilizing the normal His-Purkinje conduction network. The resulting QRS complex is relatively narrow and lacks the deep S-wave notch learned by the Class V filters, evading detection.
-- *Case 4 (True V under 0 dB noise):* Heavy electrode motion noise buries the QRS notch in high-amplitude artifacts. With distinguishing morphology obscured, the classifier defaults to the majority Class N prior.
+Examining the misclassified waveforms in @fig-errors highlights four recurring failure mechanisms:
+
+In Case 1 (Beat 1, true N misclassified as S; probabilities: [0.03, 0.97, 0.00, 0.00]), the normal sinus beat exhibits slight baseline drift and a prominent, peaked T-wave. The network misinterprets this repolarization wave as an ectopic atrial P-wave, predicting an atrial premature contraction (Class S).
+
+In Case 2 (Beat 229, true S misclassified as N; probabilities: [1.00, 0.00, 0.00, 0.00]), the supraventricular ectopic beat displays a narrow QRS complex identical to sinus rhythm. Because the model receives an isolated 256-sample window without preceding RR-interval timing, spatial convolutions cannot detect the prematurity of the beat.
+
+In Case 3 (Beat 5025, true V misclassified as N), an atypical ventricular beat originates high in the interventricular septum, partially engaging the normal His-Purkinje conduction system. The resulting QRS complex is narrow and lacks the deep S-wave notch learned by the Class V filters, evading detection.
+
+In Case 4 (true V under 0 dB noise), severe electrode motion noise obscures the QRS notch. With the characteristic morphological features buried under noise, the classifier defaults to the majority Class N prior.
 
 == Success-criteria review
 Returning to the five measurable criteria established in Section 1.4:
@@ -432,25 +430,21 @@ Returning to the five measurable criteria established in Section 1.4:
 
 = Deployment
 
-Within this project, deployment denotes software-level toolchain verification and firmware generation for the Analog Devices MAX78002 microcontroller rather than physical on-chip testing. Because physical development kits were not supplied for this course, verification covers the complete compile-time and synthesis pipeline up to flashing-ready embedded C code.
+In this project, deployment covers software-level toolchain verification and firmware generation for the Analog Devices MAX78002 microcontroller. Physical on-chip testing was excluded because hardware development kits were not supplied for this course. Verification therefore spans the complete compile-time and synthesis pipeline up to flashing-ready embedded C code.
 
 == MAX78002 compatibility
-The MAX78002 microcontroller integrates a dedicated CNN hardware accelerator with 64 parallel 8-bit SIMD ALUs. Its memory hierarchy provides 2.0 MB of CNN weight memory (CRAM) and 512 KB of system SRAM for activations and general data buffers. The 1D CNN architecture satisfies all target hardware execution rules:
-- Layer operations: All computations use standard 1D convolutions (`Conv1D`) with kernel sizes of 5 and 3 (well within the accelerator constraint of $k <= 9$), ReLU activations, dyadic 1D max pooling (`MaxPool1D` with stride 2), and a single linear classification layer. Recurrent units, dilated convolutions, and custom unsupported operations are excluded.
-- Input dimensions: Input windows are single channel by 256 time samples ($1 times 256$), matching the depth of the accelerator input FIFO buffer without multi-bank tiling.
-- Output dimensions: The linear classification head computes 4 output logits for the target AAMI arrhythmia classes.
-- Parameter count and memory footprint: The network contains 17,092 INT8 parameters requiring 17,440 bytes of weight storage, consuming 0.83% of the 2.0 MB CRAM. Intermediate activation buffers require 4,096 bytes (4.00 KB), utilizing 0.78% of the 512 KB system SRAM.
+The MAX78002 microcontroller contains a hardware CNN accelerator with 64 parallel 8-bit SIMD ALUs. Its memory hierarchy provides 2.0 MB of CNN weight memory (CRAM) and 512 KB of system SRAM for activations and general data buffers.
+
+To execute on this engine, the network restricts all layers to supported hardware primitives: standard 1D convolutions (`Conv1D`) with kernel sizes of 5 and 3 (well within the accelerator constraint of $k <= 9$), ReLU activations, dyadic max pooling (`MaxPool1D` with stride 2), and a linear classification head. Unsupported operations, such as dilated convolutions or recurrent connections, are omitted.
+
+The network processes single-channel windows of 256 time samples ($1 times 256$), which match the accelerator input FIFO without multi-bank tiling. The linear head produces 4 logits corresponding to the target AAMI classes. In total, the 17,092 INT8 parameters require 17,440 bytes of weight storage, consuming 0.83% of the 2.0 MB CRAM. Intermediate activation buffers require 4,096 bytes (4.00 KB), using 0.78% of the 512 KB system SRAM.
 
 == MAX78002 toolchain workflow
 Model translation and firmware generation follow the Analog Devices `ai8x-training` and `ai8x-synthesis` framework across four stages:
-1. Model configuration: The network definition conforms to `ai8x` execution rules, specifying layer dimensions, kernel allocations, and a 50 MHz accelerator clock in `max78002/model_configuration/cnn_max78002.yaml`.
-2. Symmetric quantization: Post-training quantization through `src/quantize.py` converts floating-point weights to symmetric signed 8-bit integers in the range $[-127, 127]$ and scales biases to 32-bit signed integers, exporting the arrays to `max78002/quantization_output/quantized_cnn.npz`.
-3. Network synthesis: The `ai8x-synthesis` toolchain (`src/synthesize.py` wrapping `ai8xize.py`) compiles network layers into hardware control state machines, maps parameters across the 64 SIMD processors, and verifies memory placement.
-4. C code generation: The synthesis compiler generates low-level C drivers and firmware files in `max78002/synthesis_output/`:
-   - `weights.h`: Static INT8 weight arrays and INT32 bias arrays formatted for accelerator registers.
-   - `sample_input.h`: Static INT8 preprocessed reference beat for test vector verification.
-   - `cnn.h` and `cnn.c`: Low-level accelerator drivers and register control routines.
-   - `main.c`: Cortex-M4 firmware coordinating hardware clocks, loading the input FIFO, triggering accelerator execution, and outputting classification logits.
+1. Specify layer dimensions, kernel allocations, and a 50 MHz accelerator clock according to `ai8x` execution rules in `max78002/model_configuration/cnn_max78002.yaml`.
+2. Convert floating-point weights to symmetric signed 8-bit integers in the range $[-127, 127]$ and scale biases to 32-bit signed integers using `src/quantize.py`, exporting the quantized arrays to `max78002/quantization_output/quantized_cnn.npz`.
+3. Synthesize the network with `src/synthesize.py` (wrapping `ai8xize.py`), compiling layers into hardware control state machines, mapping parameters across the 64 SIMD processors, and verifying memory allocations.
+4. Generate embedded C drivers and firmware files into `max78002/synthesis_output/`: static weight and bias arrays in `weights.h`, a preprocessed reference beat in `sample_input.h`, peripheral driver routines in `cnn.h` and `cnn.c`, and Cortex-M4 firmware in `main.c` that configures hardware clocks, loads the FIFO buffer, triggers inference, and reads classification logits.
 
 == Deployment evidence
 The network passed all automated checks in the `ai8x-synthesis` toolchain without compilation warnings or errors. @tbl-deployment summarizes the verification status and hardware memory consumption.
@@ -471,11 +465,9 @@ The network passed all automated checks in the `ai8x-synthesis` toolchain withou
 ) <tbl-deployment>
 
 == Hardware limitations
-In strict accordance with course instructions and Rule 6, this project reports no measured physical benchtop values. We explicitly distinguish software-level verification from physical hardware verification:
-- Software verified: Toolchain acceptance, symmetric INT8 quantization, accelerator state-machine synthesis, automated C firmware generation, and bit-accurate Python functional simulation.
-- Hardware verified: None, pending physical evaluation hardware.
+In strict accordance with course instructions and Rule 6, this project reports no measured physical benchtop values. We maintain a strict boundary between software-level verification and physical hardware verification. Software verification encompasses toolchain acceptance, symmetric INT8 quantization, accelerator state-machine synthesis, automated C firmware generation, and bit-accurate Python simulation. In contrast, physical hardware verification remains unperformed because no physical evaluation board was available.
 
-Consequently, no empirical hardware claims are made for inference latency, power consumption, energy per inference, real MAX78002 accuracy, or real-time operating performance. The reported latency ($approx 0.234$ ms per beat), active power ($approx 5.0$ mW), and energy dissipation ($approx 1.17 mu$J per beat across 749,568 MACs) represent theoretical analytical estimates derived from MAX78002 datasheet electrical specifications at 50 MHz.
+Consequently, we make no empirical hardware claims for inference latency, power consumption, energy per inference, physical MAX78002 accuracy, or real-time operating performance. The reported latency ($approx 0.234$ ms per beat), active power ($approx 5.0$ mW), and energy dissipation ($approx 1.17 mu$J per beat across 749,568 MACs) represent theoretical analytical estimates derived from MAX78002 datasheet electrical specifications at 50 MHz.
 
 == Proposed hardware validation
 If a physical MAX78002 evaluation kit (MAX78002EVKIT) becomes available, validation would proceed through six experimental steps:
@@ -483,7 +475,7 @@ If a physical MAX78002 evaluation kit (MAX78002EVKIT) becomes available, validat
 2. Stream preprocessed INT8 beat vectors from `sample_input.h` into the hardware FIFO buffer over UART or SPI direct memory access.
 3. Compare classification logits read from hardware accelerator registers against Python simulation outputs to confirm bit-accurate agreement.
 4. Inspect intermediate layer activation buffers across accelerator memory banks to verify layer-by-layer numerical consistency with software emulation.
-5. Measure wall-clock inference latency by toggling a dedicated GPIO pin at inference boundaries and reading cycle counts from the Cortex-M4 DWT counter (`DWT->CYCCNT`).
+5. Measure true wall-clock inference latency by toggling a GPIO pin at inference boundaries and reading cycle counts from the Cortex-M4 DWT counter (`DWT->CYCCNT`).
 6. Profile dynamic current draw on the VDD_CNN power rail using an external current shunt resistor and power analyzer to determine physical energy consumption per beat.
 
 #v(6pt)
@@ -497,54 +489,54 @@ Two primary characteristics govern the MIT-BIH dataset: extreme class imbalance 
 Classification errors concentrated primarily in two categories: distinguishing supraventricular ectopic beats (Class S) from normal sinus rhythm (Class N), and identifying fusion beats (Class F). On the DS2 test set, the CNN obtained only 3.32% sensitivity on Class S (F1 of 0.0285), misclassifying 1,773 of 1,837 supraventricular beats as normal. Because supraventricular impulses originate above the ventricles and conduct along normal His-Purkinje pathways, their QRS complexes share the narrow waveform morphology of sinus rhythm. Distinguishing them requires relative RR interval timing to identify prematurity; an isolated 256-sample window contains only local morphology and cannot detect abnormal rhythm cadence. Fusion beats presented a similar challenge, yielding an F1 of 0.0016. Because fusion complexes blend sinus and ventricular depolarizations in varying physical proportions, their morphology varies continuously between normal and ectopic shapes, leaving the model unable to separate them from rare test examples (388 beats).
 
 == Accuracy versus edge feasibility
-The highest-accuracy model was not the best Edge-AI solution. Both the quantized INT8 CNN (87.58%) and the 100-tree Random Forest baseline (83.78%) achieved higher raw accuracy than the unquantized FP32 CNN (74.20%). However, on heavily skewed clinical datasets, raw accuracy is deceptive. The quantized CNN achieved 87.58% accuracy only because zero-weight truncation biased predictions toward the 89% majority class, dropping Macro F1 from 0.3230 to 0.2506. Meanwhile, the Random Forest model generated 90,718 decision nodes requiring over 9 MB of storage. Because the MAX78002 provides only 512 KB of system SRAM and 2.0 MB of weight memory, the Random Forest model cannot fit into on-chip memory or execute on the hardware accelerator. By contrast, the 17,092-parameter 1D CNN requires 17.44 KB of weight memory and 4.0 KB of activation memory, leaving over 99% of microcontroller memory available for system tasks while achieving 87.58% recall on life-threatening ventricular ectopic beats (Class V).
+Neither the quantized INT8 CNN (87.58%) nor the 100-tree Random Forest baseline (83.78%) provides an effective edge solution, despite higher raw accuracy than the unquantized FP32 CNN (74.20%). On heavily imbalanced ECG data, unweighted accuracy rewards majority-class bias. The quantized CNN reached 87.58% accuracy only because zero-weight truncation collapsed predictions into the 89% majority class, dropping Macro F1 from 0.3230 to 0.2506. Meanwhile, the Random Forest model generated 90,718 decision nodes requiring over 9 MB of memory, far exceeding the MAX78002's 512 KB system SRAM. In addition, decision trees cannot execute on the hardware CNN accelerator. By contrast, the 17,092-parameter 1D CNN requires 17.44 KB of weight memory and 4.0 KB of activation memory, leaving over 99% of microcontroller memory free while preserving 87.58% recall on ventricular ectopic beats (Class V).
 
 == Quantization degradation and precision loss
-Post-training INT8 quantization lowered Macro F1 from 0.3230 to 0.2506, an overall loss of 0.0724. This performance drop affected classes unevenly: while normal sinus precision remained stable at 94%, macro recall dropped from 0.4199 to 0.2539. Symmetrically quantizing weights into signed 8-bit integers ($[-127, 127]$) truncated small weight values toward zero. Because minority classes produce smaller gradient updates during initial training, their separating hyperplanes depend on fine-grained weight magnitudes that collapse when rounded to nearest integer levels. Deploying to the MAX78002 without sacrificing minority sensitivity requires quantization-aware training (QAT), which models rounding noise during backpropagation so the network learns representations robust to 8-bit quantization.
+Post-training INT8 quantization lowered Macro F1 from 0.3230 to 0.2506, an overall loss of 0.0724. This performance drop affected classes unevenly: while normal sinus precision remained stable at 94%, macro recall dropped from 0.4199 to 0.2539. Symmetrically quantizing weights into signed 8-bit integers ($[-127, 127]$) truncated small weight values toward zero. Because minority classes produce smaller gradient updates during initial training, their separating hyperplanes depend on fine-grained weight magnitudes that collapse when rounded to nearest integer levels. Deploying to the MAX78002 without sacrificing minority sensitivity requires quantization-aware training (QAT), which models rounding noise during backpropagation so the network learns weight distributions that preserve minority separation after 8-bit rounding.
 
 == Noise sensitivity and filtering impact
-Evaluation against the MIT-BIH Noise Stress Test Database showed that the classifier tolerates moderate noise but degrades under severe corruption. At 12 dB SNR, accuracy dropped by only 0.32% (Macro F1 decreased by 0.0009 to 0.3221). At 6 dB SNR, accuracy fell to 72.84% (Macro F1 of 0.3181). Under severe 0 dB SNR noise, accuracy declined to 69.77% and Macro F1 dropped to 0.2911, with Class V sensitivity falling from 87.58% to 70.81% as electrode motion artifacts obscured diagnostic QRS notches. The front-end 0.5 to 40 Hz Butterworth bandpass filter proved essential to preserving performance: it attenuated respiratory baseline wander below 0.5 Hz by 18.94 dB and reduced overall noise power by 2.89 dB MSE. Without this bandpass stage, baseline drift drives raw signal amplitudes past the $[-3.0, 3.0]$ dynamic clipping thresholds, saturating the 8-bit input converter and obliterating morphological features before inference.
+Evaluation against the MIT-BIH Noise Stress Test Database showed that the classifier tolerates moderate noise but degrades under severe corruption. At 12 dB SNR, accuracy dropped by only 0.32% (Macro F1 decreased by 0.0009 to 0.3221). At 6 dB SNR, accuracy fell to 72.84% (Macro F1 of 0.3181). Under severe 0 dB SNR noise, accuracy declined to 69.77% and Macro F1 dropped to 0.2911, with Class V sensitivity falling from 87.58% to 70.81% as electrode motion artifacts obscured diagnostic QRS notches. The front-end 0.5 to 40 Hz Butterworth bandpass filter preserved diagnostic fidelity by attenuating respiratory baseline wander below 0.5 Hz by 18.94 dB and reducing overall noise power by 2.89 dB MSE. Without this bandpass stage, baseline drift drives raw signal amplitudes past the $[-3.0, 3.0]$ dynamic clipping thresholds, saturating the 8-bit input converter and obliterating morphological features before inference.
 
 == Hardware architecture constraints and design trade-offs
-Deploying to the MAX78002 required tailoring the network architecture to the accelerator's 64 parallel 8-bit SIMD ALUs and memory architecture. First, the operation set was restricted to 1D convolution, ReLU activation, stride-2 max pooling, and a single linear classification head. Recurrent layers (LSTMs, GRUs) were excluded because the accelerator lacks recurrent execution units; executing recurrent state updates in software on the Cortex-M4 CPU created prohibitive latency bottlenecks. Similarly, multi-rate wavelet transforms and Transformers were rejected due to intermediate SRAM buffering limits. Second, kernel sizes were kept small (sizes 5 and 3) and channel widths capped at 64 to map onto the 64 execution units without multi-pass memory stalling. Third, the input window was fixed at exactly 256 samples ($2^8$), allowing dyadic pooling ($256 -> 128 -> 64 -> 32$) without boundary padding. Finally, signal clipping to $[-3.0, 3.0]$ and symmetric INT8 quantization kept activations within signed 8-bit limits ($[-127, 127]$), while the single linear output head restricted total parameter storage to 17.44 KB (0.83% of CRAM).
+Deploying to the MAX78002 required tailoring the network to the accelerator's 64 parallel 8-bit SIMD ALUs and on-chip memory limits. Supported operations are restricted to 1D convolutions, ReLU activations, stride-2 max pooling, and a single linear classification head. Recurrent units (LSTMs, GRUs) were excluded because the accelerator lacks recurrent execution hardware; routing loop iterations to the Cortex-M4 CPU introduced prohibitive latency bottlenecks. Similarly, multi-rate wavelet transforms and Transformers were rejected due to intermediate SRAM buffering limits. Kernels were limited to sizes 5 and 3, and layer widths were capped at 64 channels to match the 64 hardware ALUs without multi-pass memory stalling. Sizing the input window to exactly 256 samples ($2^8$) permits dyadic pooling ($256 -> 128 -> 64 -> 32$) without boundary padding. Finally, clamping input signals to $[-3.0, 3.0]$ and quantizing to signed 8-bit integers ($[-127, 127]$) keeps activations within hardware dynamic bounds, while the single linear output head restricts parameter storage to 17.44 KB (0.83% of CRAM).
 
 == Future engineering priorities
-With additional development time, five engineering enhancements would improve diagnostic sensitivity and edge performance. First, implementing Quantization-Aware Training (QAT) during backpropagation would eliminate the 0.0724 Macro F1 drop caused by post-training weight rounding. Second, incorporating scalar pre-RR and post-RR interval ratios alongside the 256-sample window would provide the rhythm timing context needed to separate Class S from Class N beats. Third, extending the input pipeline to dual-lead ECG by pairing MLII with Lead V1 would resolve morphological ambiguities through orthogonal frontal and horizontal cardiac vectors. Fourth, exploring synthetic minority augmentation with conditional generative adversarial networks or diffusion models could expand the scarce training examples for Classes S and F. Finally, flashing the compiled C firmware to the physical MAX78002EVKIT would enable direct instrumented measurements of execution cycles and current draw on the VDD_CNN rail, validating the analytical energy estimates on physical silicon.
+Addressing the 0.0724 Macro F1 quantization drop requires implementing Quantization-Aware Training (QAT) during backpropagation, modeling integer rounding before synthesis to protect minority-class sensitivity. To separate Class S from Class N beats, the input pipeline needs scalar pre-RR and post-RR interval ratios alongside the 256-sample window, supplying the rhythm cadence that single-beat spatial convolutions lack. At the signal level, pairing Modified Lead II with Lead V1 would capture orthogonal frontal and horizontal cardiac vectors, resolving morphological axis ambiguities. For scarce categories such as Class F (388 test beats), synthetic ECG augmentation using conditional generative adversarial networks or diffusion models could expand minority training distributions. Finally, flashing compiled C firmware to the physical MAX78002EVKIT would enable direct instrumented measurements of execution cycles (using the Cortex-M4 DWT counter) and active current on the VDD_CNN rail, validating analytical energy estimates on target silicon.
 
 #v(6pt)
 
 = Limitations
 
 == Dataset and patient variance
-The study relies on the MIT-BIH Arrhythmia Database, which contains 48 half-hour recordings from 47 subjects collected between 1975 and 1979. Excluding the four paced records leaves 44 evaluated recordings totaling 100,679 beats. This represents a limited sample compared to modern multicenter clinical cohorts such as PTB-XL or the European ST-T Database. Furthermore, the dataset exhibits severe class imbalance: normal sinus beats (Class N, 89.48%) outnumber fusion beats (Class F, 0.80%) by roughly 112 to 1 and supraventricular ectopic beats (Class S, 2.76%) by 32 to 1. This imbalance restricts statistical confidence when evaluating minority-class metrics. Inter-patient physiological variations, such as anatomical cardiac axis deviation, chest geometry, and baseline conduction pathologies, create substantial morphological variance across individuals. Because an atypical normal beat from one patient can resemble an ectopic beat from another patient more closely than that patient's own baseline rhythm, fixed spatial filters face inherent generalization limits on unseen anatomies. Finally, the historical analog recordings, acquired at 360 Hz with 11-bit resolution using hospital-grade wet gel electrodes, do not reflect modern digital acquisition hardware.
+The study relies on the MIT-BIH Arrhythmia Database, which contains 48 half-hour recordings from 47 subjects collected between 1975 and 1979. Excluding the four paced records leaves 44 evaluated recordings totaling 100,679 beats, a modest sample compared to modern multicenter clinical archives such as PTB-XL or the European ST-T Database. Furthermore, the dataset exhibits marked class imbalance: normal sinus beats (Class N, 89.48%) outnumber fusion beats (Class F, 0.80%) by roughly 112 to 1 and supraventricular ectopic beats (Class S, 2.76%) by 32 to 1. This disparity restricts statistical confidence when evaluating minority-class metrics. Inter-patient physiological differences, including cardiac axis deviation, chest geometry, and baseline conduction pathologies, create wide morphological variance across individuals. Because an atypical normal beat from one patient can resemble an ectopic beat from another patient more closely than that patient's own baseline rhythm, fixed spatial filters face inherent generalization limits on unseen anatomies. Finally, the historical analog recordings, acquired at 360 Hz with 11-bit resolution using hospital-grade wet gel electrodes, differ from modern digital ambulatory acquisitions.
 
 == Embedded execution constraints
-On the embedded deployment side, the pipeline assumes presegmented 256-sample windows centered on annotated R-peaks. Autonomous wearable operation requires pairing the classifier with an upstream QRS detector, such as an integer Pan-Tompkins implementation, to segment streaming signals in real time. In addition, all latency (0.234 ms), power (5.0 mW), and per-beat energy figures (1.17 $mu$J) reported here are software-verified analytical projections derived from MAX78002 datasheet electrical specifications at 50 MHz and synthesis memory maps. Because no physical MAX78002EVKIT board was evaluated on an instrumented test bench, these metrics remain software verified rather than hardware verified.
+For embedded deployment, the pipeline assumes presegmented 256-sample windows centered on annotated R-peaks. Autonomous wearable operation requires pairing the classifier with an upstream QRS detector, such as an integer Pan-Tompkins implementation, to segment streaming signals in real time. In addition, all latency (0.234 ms), power (5.0 mW), and per-beat energy figures (1.17 $mu$J) reported here are software-verified analytical projections derived from MAX78002 datasheet electrical specifications at 50 MHz and synthesis memory maps. Because testing occurred without a physical MAX78002EVKIT board on an instrumented bench, these figures represent software-verified benchmarks. Direct hardware verification remains future work.
 
 == Wearable domain shift and clinical translation
-Transitioning from clinical Holter data to wearable patches introduces a major domain shift. Commercial wearable monitors rely on dry-contact electrodes that suffer from higher skin-contact impedance, severe motion artifacts during daily physical activity, perspiration-induced baseline wander, and lower or variable sampling rates. Moreover, single-lead patches capture nonstandard thoracic lead vectors that differ substantially from the Modified Limb Lead II (MLII) orientation used in this study. Lastly, this project is a retrospective offline computational investigation. The model has not undergone prospective clinical testing in hospital or ambulatory workflows, lacks formal software qualification under medical device standards (IEC 62304), and is not cleared for diagnostic use.
+Moving from clinical Holter data to wearable patches introduces a major domain shift. Commercial wearable monitors rely on dry-contact electrodes that suffer from higher skin-contact impedance, frequent motion artifacts during daily physical activity, perspiration-induced baseline wander, and lower or variable sampling rates. Moreover, single-lead patches capture nonstandard thoracic lead vectors that differ markedly from the Modified Limb Lead II (MLII) orientation used in this study. Lastly, this project is a retrospective offline computational investigation. The model has not undergone prospective clinical testing in hospital or ambulatory workflows, lacks formal software qualification under medical device standards (IEC 62304), and is not cleared for diagnostic use.
 
 #v(6pt)
 
 = Final submission package verification
 
 == Deliverable inventory
-The project distribution contains the complete pipeline source, documentation, evaluation artifacts, and generated microcontroller assets, structured according to the official submission specification:
+The project repository contains all pipeline source files, documentation, evaluation artifacts, and generated microcontroller assets, structured according to the official submission specification:
 
 #table(
   columns: (1.2fr, 2.3fr, 2.5fr),
   align: (left, left, left),
   table.header([Component], [Path / Location], [Verified Contents]),
-  [Documentation], [`report.pdf`, `report.typ`, `README.md`], [CRISP-DM technical report, Typst source, and setup workflow],
-  [Dependencies], [`requirements.txt`, `pyproject.toml`, `uv.lock`], [Locked Python dependencies for pip and uv environments],
+  [Documentation], [`report.pdf`, `report.typ`, `README.md`], [CRISP-DM technical report, Typst source, and reproduction guide],
+  [Dependencies], [`requirements.txt`, `pyproject.toml`, `uv.lock`], [Locked dependencies for pip and uv environments],
   [Data analysis], [`notebooks/EDA.ipynb`], [Executed exploratory analysis, distributions, and filter curves],
-  [Source pipeline], [`src/`], [Complete workflow: data ingestion, preprocessing, training, evaluation, noise tests, and synthesis],
+  [Source pipeline], [`src/`], [Data preparation, dataset loader, model definitions, training, evaluation, noise tests, and synthesis],
   [Configuration], [`configs/`, `max78002/model_configuration/`], [Hardware network specification (`cnn_max78002.yaml`)],
   [Evaluation records], [`results/`], [Metrics log (`metrics.csv`), confusion matrices, noise stress curves, and error plots],
   [MAX78002 firmware], [`max78002/`], [Quantized INT8 weights, memory map, and C drivers (`cnn.c`, `main.c`, `weights.h`)]
 )
 
-In accordance with course instructions, raw PhysioNet dataset files are excluded from the repository package. The complete raw dataset is retrieved automatically by executing `uv run python src/prepare_data.py` (or `python src/download_data.py`).
+In accordance with course instructions, raw PhysioNet dataset files are excluded from the repository package. The complete raw dataset is retrieved automatically by running `uv run python src/prepare_data.py` (or `python src/download_data.py`).
 
 == Compliance with project rules
 The implementation satisfies all nine mandatory rules defined on page 13 of the project specification:
